@@ -27,12 +27,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "02_Requirements/User_Stories.md",
+                "file": "02_Requirements/Use_Cases.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "User_Stories"
+              "title": "Use_Cases"
             }
           }
         ],
@@ -197,8 +197,9 @@
   },
   "active": "d0222b31da888e82",
   "lastOpenFiles": [
-    "02_Requirements/Business_Requirements.md",
     "02_Requirements/User_Stories.md",
+    "02_Requirements/Use_Cases.md",
+    "02_Requirements/Business_Requirements.md",
     "02_Requirements/Functional_Requirements.md",
     "02_Requirements/Software_Requirements_Specification.md",
     "01_Project_Charter/Project_Charter.md",
