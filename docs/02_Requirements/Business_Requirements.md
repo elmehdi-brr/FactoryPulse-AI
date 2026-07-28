@@ -421,3 +421,11 @@ FactoryPulse AI aims to demonstrate how Artificial Intelligence, Industrial IoT,
 The platform focuses on improving equipment visibility, supporting maintenance teams, detecting abnormal behavior, predicting potential failures, and enabling data-driven industrial decision-making.
 
 The project will be developed incrementally, following a structured software engineering methodology that includes requirements analysis, system architecture, database design, implementation, AI development, testing, deployment, and documentation.
+
+---
+## Related Documents
+
+- [[Project_Charter]]
+- [[User_Stories]]
+- [[Software_Requirements_Specification]]
+

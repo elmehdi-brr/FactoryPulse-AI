@@ -8,21 +8,7 @@
         "type": "tabs",
         "children": [
           {
-            "id": "7cfcbfb1c94446d0",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "02_Requirements/Functional_Requirements.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Functional_Requirements"
-            }
-          },
-          {
-            "id": "d0222b31da888e82",
+            "id": "5f952d707a73b6a2",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -33,6 +19,20 @@
               },
               "icon": "lucide-file",
               "title": "Use_Cases"
+            }
+          },
+          {
+            "id": "cd51e7de0206b00b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "02_Requirements/Non_Functional_Requirements.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Non_Functional_Requirements"
             }
           }
         ],
@@ -195,13 +195,14 @@
       "bases:Create new base": false
     }
   },
-  "active": "d0222b31da888e82",
+  "active": "cd51e7de0206b00b",
   "lastOpenFiles": [
-    "02_Requirements/User_Stories.md",
+    "02_Requirements/Non_Functional_Requirements.md",
     "02_Requirements/Use_Cases.md",
-    "02_Requirements/Business_Requirements.md",
+    "02_Requirements/User_Stories.md",
     "02_Requirements/Functional_Requirements.md",
     "02_Requirements/Software_Requirements_Specification.md",
+    "02_Requirements/Business_Requirements.md",
     "01_Project_Charter/Project_Charter.md",
     "14_Resources",
     "13_Daily_Notes",

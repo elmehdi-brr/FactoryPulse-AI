@@ -628,3 +628,15 @@ The following use cases may be implemented in future versions:
 - UC-FUTURE-005 — Forecast Energy Consumption
 - UC-FUTURE-006 — Manage Multiple Factories
 - UC-FUTURE-007 — Integrate with ERP or CMMS
+
+
+
+
+
+---
+
+## Related Documents
+
+- [[User_Stories]]
+- [[Functional_Requirements]]
+- [[Software_Requirements_Specification]]
