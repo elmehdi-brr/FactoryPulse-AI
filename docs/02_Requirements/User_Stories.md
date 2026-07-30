@@ -1,8 +1,9 @@
 # User Stories
 
-**Project:** FactoryPulse AI  
-**Version:** 1.0  
+**Project:** FactoryPulse AI
+**Version:** 1.1
 **Status:** Draft
+**Change Note (v1.1):** Added **US-ADM-005 (PROPOSED ADDITION)** to close a gap found in the requirements audit: Functional_Requirements.md already listed Create/Update/Delete Machine (FR-MON-001/002/003), and Machine Registration is explicitly in-scope per [[Business_Requirements]] Section 8.1, but no User Story described who performs it. All other stories are unchanged from v1.0. See [[Requirements_Traceability_Matrix]] for the full US → FR → UC mapping.
 
 ---
 
@@ -92,6 +93,24 @@ so that I can monitor important user and system actions.
 ### Priority
 
 Medium
+
+---
+
+## US-ADM-005 — Machine Registration *(PROPOSED ADDITION)*
+
+**As an Administrator,**
+
+I want to register, update, and remove machines in the platform,
+
+so that the system's equipment inventory accurately reflects the organization's real machines before monitoring, sensors, or maintenance can be attached to them.
+
+### Priority
+
+High
+
+### Why this was added
+
+Functional_Requirements.md has always listed "Create Machine," "Update Machine," and "Delete Machine" (now FR-MON-001/002/003), and machine registration is explicitly listed as in-scope in [[Business_Requirements]] Section 8.1 ("Equipment Monitoring → Machine registration"). No User Story previously described this. It is marked High priority because every other MVP capability (sensor data, dashboards, alerts, maintenance tasks) depends on machines already existing in the system.
 
 ---
 
@@ -567,10 +586,6 @@ A User Story is considered complete when:
 - The code has been reviewed.
 - The feature has been integrated into the main project.
 
-
-
-
-
 ---
 
 ## Related Documents
@@ -578,4 +593,4 @@ A User Story is considered complete when:
 - [[Business_Requirements]]
 - [[Functional_Requirements]]
 - [[Use_Cases]]
-
+- [[Requirements_Traceability_Matrix]]

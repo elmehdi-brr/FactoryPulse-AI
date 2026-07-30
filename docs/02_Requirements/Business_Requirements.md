@@ -1,11 +1,12 @@
 # Business Requirements Document (BRD)
 
-**Project Name:** FactoryPulse AI  
-**Document Type:** Business Requirements Document  
-**Version:** 1.0  
-**Status:** Draft  
-**Author:** El Mehdi Barrouchi  
-**Date:** 2026-07-27  
+**Project Name:** FactoryPulse AI
+**Document Type:** Business Requirements Document
+**Version:** 1.1
+**Status:** Draft
+**Author:** El Mehdi Barrouchi
+**Date:** 2026-07-27
+**Change Note (v1.1):** Formal Business Objective IDs (BO-001…BO-006) added to Section 4, replacing the un-numbered subsections used in v1.0. No wording in the objectives themselves was changed. See [[Requirements_Traceability_Matrix]] for full downstream traceability.
 
 ---
 
@@ -66,37 +67,39 @@ The platform is designed as a prototype of a modern industrial technology soluti
 
 # 4. Business Objectives
 
-## 4.1 Reduce Unplanned Downtime
+Each objective now carries a formal ID (**BO-###**) so it can be traced through the Software Requirements Specification, Functional Requirements, User Stories, Use Cases, and the Requirements Traceability Matrix.
+
+## BO-001 — Reduce Unplanned Downtime
 
 Provide early warnings about abnormal machine behavior and potential failures to help maintenance teams intervene before critical failures occur.
 
 ---
 
-## 4.2 Improve Maintenance Planning
+## BO-002 — Improve Maintenance Planning
 
 Provide maintenance teams with information about machine health, maintenance history, alerts, and predicted risks to support better maintenance planning.
 
 ---
 
-## 4.3 Improve Equipment Visibility
+## BO-003 — Improve Equipment Visibility
 
 Provide a centralized view of the organization's machines, sensors, machine states, alerts, and maintenance activities.
 
 ---
 
-## 4.4 Support Data-Driven Decision Making
+## BO-004 — Support Data-Driven Decision Making
 
 Transform raw sensor and maintenance data into meaningful information through dashboards, analytics, and AI-powered insights.
 
 ---
 
-## 4.5 Improve Maintenance Efficiency
+## BO-005 — Improve Maintenance Efficiency
 
 Help maintenance teams prioritize critical equipment and focus resources on machines with higher failure risks.
 
 ---
 
-## 4.6 Centralize Industrial Information
+## BO-006 — Centralize Industrial Information
 
 Bring together machine monitoring, sensor data, alerts, maintenance activities, and AI predictions in one centralized platform.
 
@@ -296,6 +299,8 @@ The following elements are outside the initial scope of the project:
 
 These features may be considered for future versions.
 
+> **Audit confirmation (v1.1):** No Functional Requirement, User Story, or Use Case in the current documentation set reintroduces any of the items above. No scope violations were found.
+
 ---
 
 # 10. Business Assumptions
@@ -412,6 +417,8 @@ Future versions of FactoryPulse AI could expand into:
 - AI-powered industrial assistant
 - Integration with ERP and CMMS systems
 
+> **Note (v1.1):** "Maintenance cost optimization" here refers to *advanced, AI-driven* cost optimization. Basic maintenance cost **tracking** (recording and viewing cost figures per task) is already represented at Post-MVP level via US-MM-006 and the newly added FR-MAINT-005 — see [[Functional_Requirements]]. This entry is not a duplicate; it covers a more advanced future capability (optimization, not tracking).
+
 ---
 
 # 15. Conclusion
@@ -423,9 +430,11 @@ The platform focuses on improving equipment visibility, supporting maintenance t
 The project will be developed incrementally, following a structured software engineering methodology that includes requirements analysis, system architecture, database design, implementation, AI development, testing, deployment, and documentation.
 
 ---
+
 ## Related Documents
 
 - [[Project_Charter]]
 - [[User_Stories]]
 - [[Software_Requirements_Specification]]
-
+- [[Functional_Requirements]]
+- [[Requirements_Traceability_Matrix]]

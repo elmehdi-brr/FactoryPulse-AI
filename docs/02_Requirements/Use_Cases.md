@@ -1,8 +1,13 @@
 # Use Cases
 
-**Project:** FactoryPulse AI  
-**Version:** 1.0  
+**Project:** FactoryPulse AI
+**Version:** 1.1
 **Status:** Draft
+**Change Note (v1.1):**
+1. Added **UC-MACH-001 (PROPOSED ADDITION)** — Register and Manage Machines — to support the new US-ADM-005 and existing FR-MON-001/002/003, which previously had no Use Case.
+2. Added **Technician** as a supporting actor on **UC-MON-002** so it correctly serves US-TECH-005 (a technician reviewing machine maintenance history before an intervention), reusing this existing Use Case instead of creating a duplicate.
+3. No Use Cases were deleted or renamed. `UC-AI-001` (Detect Machine Anomaly) is confirmed as the correct, existing ID — the Requirements Traceability Matrix previously referred to it incorrectly as `UC-ANOM-001`; that error was fixed in the RTM, not here.
+4. `UC-USER-001` (Manage Users) is confirmed to already cover role assignment (see its Main Flow, step 5), so it now explicitly serves both US-ADM-001 and US-ADM-002 — no separate "Manage Roles" Use Case was created, to avoid duplicating this flow.
 
 ---
 
@@ -40,7 +45,7 @@ Each Use Case contains:
 
 **Primary Actor:** All Users
 
-**Description:**  
+**Description:**
 Allows an authorized user to securely access the FactoryPulse AI platform.
 
 **Preconditions:**
@@ -49,7 +54,7 @@ Allows an authorized user to securely access the FactoryPulse AI platform.
 - The user has valid credentials.
 - The platform is available.
 
-**Trigger:**  
+**Trigger:**
 The user opens the login page.
 
 ### Main Flow
@@ -86,6 +91,9 @@ The user opens the login page.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-AUTH-001
+**Related User Story:** US-SYS-001
+
 ---
 
 # 4. Machine Monitoring Use Cases
@@ -96,7 +104,7 @@ The user opens the login page.
 
 **Supporting Actors:** Maintenance Manager
 
-**Description:**  
+**Description:**
 Allows authorized users to view the overall operational status of the factory.
 
 **Preconditions:**
@@ -104,7 +112,7 @@ Allows authorized users to view the overall operational status of the factory.
 - The user is authenticated.
 - Factory data is available.
 
-**Trigger:**  
+**Trigger:**
 The user opens the main dashboard.
 
 ### Main Flow
@@ -124,15 +132,18 @@ The user opens the main dashboard.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-DASH-001, FR-DASH-004, FR-MON-004, FR-MON-005
+**Related User Stories:** US-PM-001, US-MM-001, US-PM-003 (availability overview)
+
 ---
 
 ## UC-MON-002 — View Machine Details
 
 **Primary Actor:** Maintenance Engineer
 
-**Supporting Actors:** Maintenance Manager, Plant Manager
+**Supporting Actors:** Maintenance Manager, Plant Manager, Technician *(added in v1.1 — see change note)*
 
-**Description:**  
+**Description:**
 Allows a user to inspect detailed information about a specific machine.
 
 **Preconditions:**
@@ -140,7 +151,7 @@ Allows a user to inspect detailed information about a specific machine.
 - The user is authenticated.
 - The machine exists in the system.
 
-**Trigger:**  
+**Trigger:**
 The user selects a machine.
 
 ### Main Flow
@@ -163,13 +174,16 @@ The user selects a machine.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-MON-004, FR-SENSOR-002, FR-MAINT-004, FR-MON-005
+**Related User Stories:** US-ME-001, US-ME-002 (sensor history, steps 7–8), US-PM-003 (machine-level availability), US-MM-005 / US-TECH-005 (maintenance history, step 10)
+
 ---
 
 ## UC-MON-003 — Monitor Sensor Data in Real Time
 
 **Primary Actor:** Maintenance Engineer
 
-**Description:**  
+**Description:**
 Allows an engineer to monitor live sensor measurements.
 
 **Preconditions:**
@@ -178,7 +192,7 @@ Allows an engineer to monitor live sensor measurements.
 - The machine has registered sensors.
 - Sensor data is available.
 
-**Trigger:**  
+**Trigger:**
 The user opens the real-time monitoring view.
 
 ### Main Flow
@@ -207,6 +221,9 @@ The user opens the real-time monitoring view.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-DASH-002
+**Related User Story:** US-ME-003
+
 ---
 
 # 5. Alert Management Use Cases
@@ -217,7 +234,7 @@ The user opens the real-time monitoring view.
 
 **Supporting Actors:** Maintenance Engineer, Technician
 
-**Description:**  
+**Description:**
 Allows authorized users to view and manage machine alerts.
 
 **Preconditions:**
@@ -225,7 +242,7 @@ Allows authorized users to view and manage machine alerts.
 - The user is authenticated.
 - Alerts exist in the system.
 
-**Trigger:**  
+**Trigger:**
 The user opens the alerts section.
 
 ### Main Flow
@@ -245,6 +262,9 @@ The user opens the alerts section.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-ALERT-001, FR-ALERT-002
+**Related User Story:** US-SYS-002
+
 ---
 
 ## UC-ALERT-002 — Resolve Alert
@@ -253,7 +273,7 @@ The user opens the alerts section.
 
 **Supporting Actors:** Technician
 
-**Description:**  
+**Description:**
 Allows an authorized user to investigate and resolve a machine alert.
 
 **Preconditions:**
@@ -261,7 +281,7 @@ Allows an authorized user to investigate and resolve a machine alert.
 - The user is authenticated.
 - An active alert exists.
 
-**Trigger:**  
+**Trigger:**
 The user selects an active alert.
 
 ### Main Flow
@@ -282,6 +302,9 @@ The user selects an active alert.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-ALERT-003
+**Related User Story:** US-SYS-002 *(extension — receiving an alert naturally leads to resolving it; this was previously unlinked from any User Story in the RTM)*
+
 ---
 
 # 6. Predictive Maintenance Use Cases
@@ -292,7 +315,7 @@ The user selects an active alert.
 
 **Supporting Actors:** Maintenance Engineer
 
-**Description:**  
+**Description:**
 Allows authorized users to review AI-generated machine failure risk predictions.
 
 **Preconditions:**
@@ -301,7 +324,7 @@ Allows authorized users to review AI-generated machine failure risk predictions.
 - Machine sensor data is available.
 - A trained AI model is available.
 
-**Trigger:**  
+**Trigger:**
 The user opens the machine risk analysis.
 
 ### Main Flow
@@ -321,13 +344,16 @@ The user opens the machine risk analysis.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-AI-002 (includes risk classification/scoring, step 7)
+**Related User Stories:** US-MM-002, US-ME-005
+
 ---
 
 ## UC-PRED-002 — View AI Prediction Explanation
 
 **Primary Actor:** Maintenance Engineer
 
-**Description:**  
+**Description:**
 Allows an engineer to understand the factors contributing to an AI prediction.
 
 **Preconditions:**
@@ -335,7 +361,7 @@ Allows an engineer to understand the factors contributing to an AI prediction.
 - A machine prediction exists.
 - Explainability information is available.
 
-**Trigger:**  
+**Trigger:**
 The engineer opens the prediction explanation.
 
 ### Main Flow
@@ -353,6 +379,9 @@ The engineer opens the prediction explanation.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-AI-004
+**Related User Story:** US-ME-006
+
 ---
 
 # 7. Maintenance Management Use Cases
@@ -363,7 +392,7 @@ The engineer opens the prediction explanation.
 
 **Supporting Actors:** Maintenance Engineer
 
-**Description:**  
+**Description:**
 Allows an authorized user to create a maintenance task for a machine.
 
 **Preconditions:**
@@ -371,7 +400,7 @@ Allows an authorized user to create a maintenance task for a machine.
 - The user is authenticated.
 - The machine exists.
 
-**Trigger:**  
+**Trigger:**
 The user decides that maintenance is required.
 
 ### Main Flow
@@ -394,13 +423,16 @@ The user decides that maintenance is required.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-MAINT-001
+**Related User Story:** US-MM-003
+
 ---
 
 ## UC-MAINT-002 — Assign Maintenance Task
 
 **Primary Actor:** Maintenance Manager
 
-**Description:**  
+**Description:**
 Allows a manager to assign a maintenance task to a technician.
 
 **Preconditions:**
@@ -408,7 +440,7 @@ Allows a manager to assign a maintenance task to a technician.
 - A maintenance task exists.
 - At least one technician is available.
 
-**Trigger:**  
+**Trigger:**
 The manager opens an unassigned maintenance task.
 
 ### Main Flow
@@ -427,21 +459,24 @@ The manager opens an unassigned maintenance task.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-MAINT-002
+**Related User Story:** US-MM-004
+
 ---
 
 ## UC-MAINT-003 — Update Maintenance Task
 
 **Primary Actor:** Technician
 
-**Description:**  
-Allows a technician to update the progress of a maintenance task.
+**Description:**
+Allows a technician to update the progress of a maintenance task. This Use Case also serves the technician's initial task list and task-detail views (steps 1–3) and the intervention report (steps 6–8), so it is reused for multiple related User Stories instead of splitting into several near-identical Use Cases.
 
 **Preconditions:**
 
 - The technician is authenticated.
 - The technician has an assigned task.
 
-**Trigger:**  
+**Trigger:**
 The technician starts or completes maintenance work.
 
 ### Main Flow
@@ -464,6 +499,9 @@ The technician starts or completes maintenance work.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-MAINT-003, FR-MAINT-004
+**Related User Stories:** US-TECH-001 (step 1), US-TECH-002 (step 3), US-TECH-003, US-TECH-004 (steps 6–8)
+
 ---
 
 # 8. AI Anomaly Detection Use Cases
@@ -474,7 +512,7 @@ The technician starts or completes maintenance work.
 
 **Supporting Actors:** Maintenance Engineer
 
-**Description:**  
+**Description:**
 Automatically identifies abnormal machine behavior using sensor data.
 
 **Preconditions:**
@@ -482,7 +520,7 @@ Automatically identifies abnormal machine behavior using sensor data.
 - Sensor data is available.
 - An anomaly detection model is available.
 
-**Trigger:**  
+**Trigger:**
 New sensor data is received.
 
 ### Main Flow
@@ -504,6 +542,9 @@ New sensor data is received.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-AI-001
+**Related User Story:** US-ME-004
+
 ---
 
 # 9. Reporting Use Cases
@@ -514,15 +555,15 @@ New sensor data is received.
 
 **Supporting Actors:** Maintenance Manager
 
-**Description:**  
-Allows authorized users to generate reports about factory and equipment performance.
+**Description:**
+Allows authorized users to generate reports about factory and equipment performance. The report type selected in step 2 determines whether the output is a general operational report, a maintenance KPI report (MTBF/MTTR/downtime), or a performance trend report — these are not split into separate Use Cases since they share an identical flow.
 
 **Preconditions:**
 
 - The user is authenticated.
 - Relevant data exists.
 
-**Trigger:**  
+**Trigger:**
 The user requests a report.
 
 ### Main Flow
@@ -544,6 +585,9 @@ The user requests a report.
 
 **Priority:** Medium
 
+**Related Functional Requirement:** FR-REPORT-001, FR-REPORT-002, FR-REPORT-003, FR-REPORT-004, FR-REPORT-005
+**Related User Stories:** US-PM-002, US-PM-004, US-PM-005, US-MM-007, US-SYS-005 (export, step 9)
+
 ---
 
 # 10. User Management Use Cases
@@ -552,15 +596,15 @@ The user requests a report.
 
 **Primary Actor:** Administrator
 
-**Description:**  
-Allows an administrator to manage platform users.
+**Description:**
+Allows an administrator to manage platform users, including creating/updating accounts and assigning roles (step 5). This Use Case covers both account management and role assignment, so it serves both US-ADM-001 and US-ADM-002 without needing a separate Use Case for role management.
 
 **Preconditions:**
 
 - The administrator is authenticated.
 - The administrator has appropriate permissions.
 
-**Trigger:**  
+**Trigger:**
 The administrator opens user management.
 
 ### Main Flow
@@ -581,6 +625,58 @@ The administrator opens user management.
 
 **Priority:** High
 
+**Related Functional Requirement:** FR-USER-001, FR-USER-002
+**Related User Stories:** US-ADM-001, US-ADM-002
+
+---
+
+## UC-MACH-001 — Register and Manage Machines *(PROPOSED ADDITION)*
+
+**Primary Actor:** Administrator
+
+**Description:**
+Allows an administrator to register new machines in the platform and update or remove existing ones, so the system's equipment inventory matches the organization's real machines before sensors, monitoring, or maintenance can be attached.
+
+**Preconditions:**
+
+- The administrator is authenticated.
+- The administrator has appropriate permissions.
+
+**Trigger:**
+The administrator opens machine management.
+
+### Main Flow
+
+1. The administrator opens the machine management section.
+2. The system displays registered machines.
+3. The administrator creates a new machine or selects an existing one.
+4. The administrator enters or modifies machine information (name, type, location, metadata).
+5. The administrator saves the changes.
+6. The system validates the information.
+7. The system creates or updates the machine record.
+
+### Alternative Flows
+
+**A1 — Remove Machine**
+
+1. The administrator selects an existing machine.
+2. The administrator requests removal.
+3. The system checks for dependent records (sensors, open maintenance tasks).
+4. The system confirms or blocks the removal accordingly.
+5. The system removes the machine if confirmed.
+
+**Postconditions:**
+
+- The machine record is created, updated, or removed.
+- The machine becomes available for sensor registration and monitoring.
+
+**Priority:** High
+
+**Related Functional Requirement:** FR-MON-001, FR-MON-002, FR-MON-003
+**Related User Story:** US-ADM-005
+
+**Why this was added:** FR-MON-001/002/003 (Create/Update/Delete Machine) have existed since v1.0 of Functional_Requirements.md, and Machine registration is explicit in-scope per [[Business_Requirements]] Section 8.1, but no Use Case previously existed for it.
+
 ---
 
 # 11. Use Case Relationships
@@ -589,6 +685,8 @@ The main relationships between the platform's use cases are:
 
 ```text
 User Login
+    │
+    ├── Register and Manage Machines (Administrator)
     │
     ├── View Factory Overview
     │
@@ -629,9 +727,7 @@ The following use cases may be implemented in future versions:
 - UC-FUTURE-006 — Manage Multiple Factories
 - UC-FUTURE-007 — Integrate with ERP or CMMS
 
-
-
-
+The following capabilities are **Post-MVP** (not Future/out-of-scope, but not required for the MVP) and do not yet have a dedicated Use Case — one should be authored when each is scheduled: System Configuration (US-ADM-003 / FR-USER-003), Audit Logs (US-ADM-004 / FR-USER-004), Maintenance Costs (US-MM-006 / FR-MAINT-005), Machine Comparison (US-ME-007 / FR-DASH-005), AI Recommendations (US-ME-008 / FR-AI-003), Remaining Useful Life Prediction (FR-AI-005).
 
 ---
 
@@ -640,3 +736,4 @@ The following use cases may be implemented in future versions:
 - [[User_Stories]]
 - [[Functional_Requirements]]
 - [[Software_Requirements_Specification]]
+- [[Requirements_Traceability_Matrix]]

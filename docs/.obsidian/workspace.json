@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "02_Requirements/Use_Cases.md",
+                "file": "02_Requirements/Functional_Requirements.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Use_Cases"
+              "title": "Functional_Requirements"
             }
           },
           {
@@ -27,16 +27,15 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "02_Requirements/Non_Functional_Requirements.md",
+                "file": "02_Requirements/Requirements_Traceability_Matrix.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Non_Functional_Requirements"
+              "title": "Requirements_Traceability_Matrix"
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -195,14 +194,16 @@
       "bases:Create new base": false
     }
   },
-  "active": "cd51e7de0206b00b",
+  "active": "5f952d707a73b6a2",
   "lastOpenFiles": [
-    "02_Requirements/Non_Functional_Requirements.md",
+    "02_Requirements/Change_Log_and_Audit_Summary.md",
+    "02_Requirements/Business_Requirements.md",
     "02_Requirements/Use_Cases.md",
+    "02_Requirements/Requirements_Traceability_Matrix.md",
+    "02_Requirements/Non_Functional_Requirements.md",
     "02_Requirements/User_Stories.md",
     "02_Requirements/Functional_Requirements.md",
     "02_Requirements/Software_Requirements_Specification.md",
-    "02_Requirements/Business_Requirements.md",
     "01_Project_Charter/Project_Charter.md",
     "14_Resources",
     "13_Daily_Notes",
