@@ -11,16 +11,6 @@
             "id": "5f952d707a73b6a2",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
-            }
-          },
-          {
-            "id": "cd51e7de0206b00b",
-            "type": "leaf",
-            "state": {
               "type": "markdown",
               "state": {
                 "file": "03_Architecture/Container_Architecture.md",
@@ -29,6 +19,16 @@
               },
               "icon": "lucide-file",
               "title": "Container_Architecture"
+            }
+          },
+          {
+            "id": "cd51e7de0206b00b",
+            "type": "leaf",
+            "state": {
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ],
@@ -193,6 +193,7 @@
   },
   "active": "cd51e7de0206b00b",
   "lastOpenFiles": [
+    "03_Architecture/Component_Architecture.md",
     "03_Architecture/Container_Architecture.md",
     "03_Architecture/System_Context.md.md",
     "02_Requirements/Software_Requirements_Specification.md",

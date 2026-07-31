@@ -346,4 +346,5 @@ The following decisions apply to the initial MVP:
 - [[02_Requirements/Functional_Requirements|Functional Requirements]]
 - [[02_Requirements/Non_Functional_Requirements|Non-Functional Requirements]]
 - [[02_Requirements/Requirements_Traceability_Matrix|Requirements Traceability Matrix]]
+- [[Component_Architecture]]
 
