@@ -25,10 +25,14 @@
             "id": "cd51e7de0206b00b",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Graph view"
+              "type": "markdown",
+              "state": {
+                "file": "03_Architecture/Component_Architecture.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Component_Architecture"
             }
           }
         ],
@@ -193,8 +197,9 @@
   },
   "active": "cd51e7de0206b00b",
   "lastOpenFiles": [
-    "03_Architecture/Component_Architecture.md",
     "03_Architecture/Container_Architecture.md",
+    "03_Architecture/Deployment_Architecture.md",
+    "03_Architecture/Component_Architecture.md",
     "03_Architecture/System_Context.md.md",
     "02_Requirements/Software_Requirements_Specification.md",
     "01_Project_Charter/Project_Charter.md",
