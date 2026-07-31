@@ -592,5 +592,6 @@ Training scripts and datasets should remain separate from the inference applicat
 - [[02_Requirements/Non_Functional_Requirements|Non-Functional Requirements]]
 - [[02_Requirements/Use_Cases|Use Cases]]
 - [[Deployment_Architecture]]
+- [[03_Architecture/Architecture_Overview|Architecture Overview]]
 
 
