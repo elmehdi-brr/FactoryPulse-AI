@@ -94,7 +94,7 @@ erDiagram
         VARCHAR model_type
         VARCHAR file_path
         JSONB metrics
-        JSONB metadata
+        JSONB model_metadata
         BOOLEAN is_active
         TIMESTAMPTZ created_at
     }
@@ -651,4 +651,5 @@ It will define:
 - [[02_Requirements/Functional_Requirements|Functional Requirements]]
 - [[02_Requirements/Non_Functional_Requirements|Non-Functional Requirements]]
 - [[02_Requirements/Use_Cases|Use Cases]]
+- [[Database_Schema]]
 
