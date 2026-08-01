@@ -1225,3 +1225,5 @@ The final file structure may be adjusted if combining related endpoints makes th
 - [[API_Conventions]]
 - [[Authentication_API]]
 - [[User_and_Access_API]]
+- [[Machine_and_Sensor_API]]
+- [[Monitoring_and_Prediction_API]]
