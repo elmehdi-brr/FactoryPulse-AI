@@ -652,4 +652,7 @@ It will define:
 - [[02_Requirements/Non_Functional_Requirements|Non-Functional Requirements]]
 - [[02_Requirements/Use_Cases|Use Cases]]
 - [[Database_Schema]]
+- [[Data_Dictionary]]
+- [[Indexing_Strategy]]
+- [[Migration_and_Seed_Strategy]]
 
