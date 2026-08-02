@@ -1226,4 +1226,6 @@ The final file structure may be adjusted if combining related endpoints makes th
 - [[Authentication_API]]
 - [[User_and_Access_API]]
 - [[Machine_and_Sensor_API]]
-- [[Monitoring_and_Prediction_API]]
+- [[Alert_and_Maintenance_API]]
+- [[Notification_and_Reporting_API]]
+- [[WebSocket_Events]]
