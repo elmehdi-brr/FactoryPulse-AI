@@ -343,3 +343,179 @@ Verify current migration revision
 ```
 
 Generated migrations must always be reviewed before being applied to the database.
+
+
+## 11. Role ORM Model
+
+The second implemented ORM entity is the `Role` model.
+
+It is defined in:
+
+`backend/app/models/role.py`
+
+The model maps to the PostgreSQL table:
+
+`roles`
+
+Current fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `name` | String(50) | Unique role name |
+| `description` | String(255) | Optional role description |
+
+The `name` field is unique to prevent duplicate roles.
+
+Examples of future role values may include:
+
+- `admin`
+- `operator`
+- `maintenance`
+
+The model is registered through:
+
+`backend/app/models/__init__.py`
+
+which allows Alembic to detect it through `Base.metadata`.
+
+---
+
+## 12. Role Database Migration
+
+Alembic detected the new `roles` table using:
+
+`alembic revision --autogenerate -m "create roles table"`
+
+Generated migration revision:
+
+`add1b368d851`
+
+Previous revision:
+
+`1396225e8511`
+
+This creates the migration chain:
+
+```text
+1396225e8511
+    ↓
+add1b368d851
+````
+
+
+The migration creates:
+
+- `roles` table
+- primary key on `roles.id`
+- unique constraint on `roles.name`
+
+The migration was reviewed before being applied.
+
+It was applied using:
+
+`alembic upgrade head`
+
+Current database revision:
+
+`add1b368d851 (head)`
+
+The physical PostgreSQL table was verified directly using `psql`.
+
+Current database tables include:
+
+```
+alembic_version
+users
+roles
+```
+
+The `roles` table structure and constraints match the SQLAlchemy ORM definition.
+
+
+
+---
+
+## 13. User–Role Relationship
+
+A relationship has been implemented between the `User` and `Role` ORM models.
+
+The `users` table now contains:
+
+`role_id`
+
+This column references:
+
+`roles.id`
+
+The database relationship is defined using a foreign key:
+
+```text
+users.role_id → roles.id
+````
+
+The `role_id` field is currently nullable, allowing a user to exist temporarily without an assigned role.
+
+On the ORM side, the relationship is bidirectional.
+
+From a user object:
+
+```
+user.role
+```
+
+returns the associated role.
+
+From a role object:
+
+```
+role.users
+```
+
+returns the users assigned to that role.
+
+The migration was generated using:
+
+```
+alembic revision --autogenerate -m "link users to roles"
+```
+
+Generated revision:
+
+```
+a523ff7903c2
+```
+
+Previous revision:
+
+```
+add1b368d851
+```
+
+The migration added:
+
+- `users.role_id`
+- foreign key from `users.role_id` to `roles.id`
+
+The migration was applied using:
+
+```
+alembic upgrade head
+```
+
+Current migration revision:
+
+```
+a523ff7903c2 (head)
+```
+
+The relationship was verified directly in PostgreSQL.
+
+The `users` table now contains the foreign-key constraint:
+
+```
+users_role_id_fkey
+FOREIGN KEY (role_id) REFERENCES roles(id)
+```
+
+This confirms that the ORM relationship and the physical PostgreSQL schema are synchronized.
