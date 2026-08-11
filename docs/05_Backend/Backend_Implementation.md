@@ -519,3 +519,81 @@ FOREIGN KEY (role_id) REFERENCES roles(id)
 ```
 
 This confirms that the ORM relationship and the physical PostgreSQL schema are synchronized.
+
+
+---
+
+## 14. Machine ORM Model
+
+The `Machine` ORM model has been implemented to represent industrial machines/assets monitored by FactoryPulse AI.
+
+It is defined in:
+
+`backend/app/models/machine.py`
+
+The model maps to the PostgreSQL table:
+
+`machines`
+
+Current fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `name` | String(120) | Human-readable machine name |
+| `code` | String(50) | Unique machine identifier |
+| `location` | String(150) | Optional physical location |
+| `status` | String(30) | Current machine status |
+| `created_at` | DateTime | Machine creation timestamp |
+
+The `code` field is unique to prevent duplicate machine identifiers.
+
+The default machine status is currently:
+
+`active`
+
+The `created_at` field uses a PostgreSQL server-generated timestamp.
+
+---
+
+## 15. Machine Database Migration
+
+Alembic detected the new `machines` table using:
+
+`alembic revision --autogenerate -m "create machines table"`
+
+Generated migration revision:
+
+`6564f4c87934`
+
+Previous revision:
+
+`a523ff7903c2`
+
+The migration creates:
+
+- `machines` table
+- primary key on `machines.id`
+- unique constraint on `machines.code`
+- server-generated `created_at` timestamp
+
+The migration was reviewed before being applied.
+
+It was applied using:
+
+`alembic upgrade head`
+
+Current database revision:
+
+`6564f4c87934 (head)`
+
+The physical PostgreSQL table was verified directly using `psql`.
+
+The verified constraints include:
+
+```text
+machines_pkey PRIMARY KEY (id)
+machines_code_key UNIQUE (code)
+````
+
+This confirms that the SQLAlchemy ORM model, Alembic migration, and PostgreSQL schema are synchronized.
