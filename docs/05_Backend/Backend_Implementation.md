@@ -597,3 +597,205 @@ machines_code_key UNIQUE (code)
 ````
 
 This confirms that the SQLAlchemy ORM model, Alembic migration, and PostgreSQL schema are synchronized.
+
+
+
+---
+
+## 16. Sensor ORM Model
+
+The `Sensor` ORM model has been implemented to represent sensors attached to industrial machines.
+
+It is defined in:
+
+`backend/app/models/sensor.py`
+
+The model maps to the PostgreSQL table:
+
+`sensors`
+
+Current fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `machine_id` | Integer | Foreign key referencing the owning machine |
+| `name` | String(120) | Sensor display name |
+| `sensor_type` | String(50) | Sensor category/type |
+| `unit` | String(30) | Measurement unit |
+| `status` | String(30) | Current sensor status |
+| `created_at` | DateTime | Sensor creation timestamp |
+
+The `machine_id` field is required and references:
+
+`machines.id`
+
+This creates the database relationship:
+
+```text
+sensors.machine_id → machines.id
+````
+
+The ORM relationship is bidirectional.
+
+From a sensor object:
+
+```
+sensor.machine
+```
+
+returns the machine to which the sensor belongs.
+
+From a machine object:
+
+```
+machine.sensors
+```
+
+returns the sensors associated with that machine.
+
+---
+
+## 17. Sensor Database Migration
+
+Alembic detected the new `sensors` table using:
+
+`alembic revision --autogenerate -m "create sensors table"`
+
+Generated migration revision:
+
+`8b5591f66360`
+
+Previous revision:
+
+`6564f4c87934`
+
+The migration creates:
+
+- `sensors` table
+- primary key on `sensors.id`
+- foreign key from `sensors.machine_id` to `machines.id`
+- server-generated `created_at` timestamp
+
+The migration was reviewed before being applied.
+
+It was applied using:
+
+`alembic upgrade head`
+
+The physical PostgreSQL table was verified directly using `psql`.
+
+The verified foreign-key constraint is:
+
+```
+sensors_machine_id_fkey
+FOREIGN KEY (machine_id) REFERENCES machines(id)
+```
+
+This confirms that the SQLAlchemy ORM model, Alembic migration, and PostgreSQL schema are synchronized.
+
+
+---
+
+## 18. SensorReading ORM Model
+
+The `SensorReading` ORM model has been implemented to store time-series measurements produced by sensors.
+
+It is defined in:
+
+`backend/app/models/sensor_reading.py`
+
+The model maps to the PostgreSQL table:
+
+`sensor_readings`
+
+Current fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `sensor_id` | Integer | Foreign key referencing the source sensor |
+| `value` | Float | Numeric sensor measurement |
+| `recorded_at` | DateTime | Timestamp when the reading was recorded |
+
+The `sensor_id` field is required and references:
+
+`sensors.id`
+
+This creates the database relationship:
+
+```text
+sensor_readings.sensor_id → sensors.id
+````
+
+The ORM relationship is bidirectional.
+
+From a sensor reading:
+
+```
+reading.sensor
+```
+
+returns the source sensor.
+
+From a sensor:
+
+```
+sensor.readings
+```
+
+returns the collection of measurements associated with that sensor.
+
+---
+
+## 19. SensorReading Database Migration
+
+Alembic detected the new `sensor_readings` table using:
+
+`alembic revision --autogenerate -m "create sensor readings table"`
+
+Generated migration revision:
+
+`8735dbc45b11`
+
+Previous revision:
+
+`8b5591f66360`
+
+The migration creates:
+
+- `sensor_readings` table
+- primary key on `sensor_readings.id`
+- foreign key from `sensor_readings.sensor_id` to `sensors.id`
+- server-generated `recorded_at` timestamp
+
+The migration was reviewed before being applied.
+
+It was applied using:
+
+`alembic upgrade head`
+
+Current database revision:
+
+`8735dbc45b11 (head)`
+
+The physical PostgreSQL table was verified directly using `psql`.
+
+The verified foreign-key constraint is:
+
+```
+sensor_readings_sensor_id_fkey
+FOREIGN KEY (sensor_id) REFERENCES sensors(id)
+```
+
+The current core monitoring hierarchy is now:
+
+```
+Machine
+   ↓
+Sensor
+   ↓
+SensorReading
+```
+
+This structure provides the foundation for storing time-series machine data that will later be used by anomaly detection, prediction, monitoring, and alerting components.
