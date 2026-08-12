@@ -799,3 +799,114 @@ SensorReading
 ```
 
 This structure provides the foundation for storing time-series machine data that will later be used by anomaly detection, prediction, monitoring, and alerting components.
+
+
+
+---
+
+## 20. Prediction ORM Model
+
+The `Prediction` ORM model has been implemented to store AI/ML prediction outputs associated with sensors.
+
+It is defined in:
+
+`backend/app/models/prediction.py`
+
+The model maps to the PostgreSQL table:
+
+`predictions`
+
+Current fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `sensor_id` | Integer | Foreign key referencing the related sensor |
+| `predicted_value` | Float | Predicted numerical value |
+| `anomaly_score` | Float | Optional anomaly or risk score |
+| `is_anomaly` | Boolean | Indicates whether the prediction is considered anomalous |
+| `model_name` | String(100) | Name of the model that generated the prediction |
+| `model_version` | String(50) | Optional model version |
+| `predicted_at` | DateTime | Timestamp when the prediction was produced |
+
+The `sensor_id` field is required and references:
+
+`sensors.id`
+
+This creates the database relationship:
+
+```text
+predictions.sensor_id → sensors.id
+````
+
+The ORM relationship is bidirectional.
+
+From a prediction:
+
+```
+prediction.sensor
+```
+
+returns the related sensor.
+
+From a sensor:
+
+```
+sensor.predictions
+```
+
+returns the predictions associated with that sensor.
+
+---
+
+## 21. Prediction Database Migration
+
+Alembic detected the new `predictions` table using:
+
+`alembic revision --autogenerate -m "create predictions table"`
+
+Generated migration revision:
+
+`546cde60faa9`
+
+Previous revision:
+
+`8735dbc45b11`
+
+The migration creates:
+
+- `predictions` table
+- primary key on `predictions.id`
+- foreign key from `predictions.sensor_id` to `sensors.id`
+- server-generated `predicted_at` timestamp
+
+The migration was reviewed before being applied.
+
+It was applied using:
+
+`alembic upgrade head`
+
+Current database revision:
+
+`546cde60faa9 (head)`
+
+The physical PostgreSQL table was verified directly using `psql`.
+
+The verified foreign-key constraint is:
+
+```
+predictions_sensor_id_fkey
+FOREIGN KEY (sensor_id) REFERENCES sensors(id)
+```
+
+This confirms that the SQLAlchemy ORM model, Alembic migration, and PostgreSQL schema are synchronized.
+
+The current monitoring and AI persistence structure is now:
+
+```
+Machine
+   ↓
+Sensor
+   ├── SensorReading
+   └── Prediction
+```
