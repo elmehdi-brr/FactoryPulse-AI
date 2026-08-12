@@ -26,3 +26,4 @@ class Sensor(Base):
     machine: Mapped["Machine"] = relationship(back_populates="sensors")
     readings: Mapped[list["SensorReading"]] = relationship(back_populates="sensor")
     predictions: Mapped[list["Prediction"]] = relationship(back_populates="sensor")
+    alerts: Mapped[list["Alert"]] = relationship(back_populates="sensor")

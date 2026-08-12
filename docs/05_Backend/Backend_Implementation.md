@@ -910,3 +910,131 @@ Sensor
    ├── SensorReading
    └── Prediction
 ```
+
+
+
+---
+
+## 22. Alert ORM Model
+
+The `Alert` ORM model has been implemented to store alerts generated from abnormal sensor conditions and AI/ML prediction results.
+
+It is defined in:
+
+`backend/app/models/alert.py`
+
+The model maps to the PostgreSQL table:
+
+`alerts`
+
+Current fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `sensor_id` | Integer | Foreign key referencing the related sensor |
+| `prediction_id` | Integer | Optional foreign key referencing a prediction |
+| `severity` | String(30) | Alert severity level |
+| `title` | String(150) | Short alert title |
+| `message` | Text | Full alert description |
+| `status` | String(30) | Current alert state |
+| `created_at` | DateTime | Timestamp when the alert was created |
+
+The `sensor_id` field is required and references:
+
+`sensors.id`
+
+The optional `prediction_id` field references:
+
+`predictions.id`
+
+This allows FactoryPulse AI to support both:
+
+- rule-based alerts generated directly from sensor conditions
+- AI-generated alerts linked to anomaly or prediction results
+
+The database relationships are:
+
+```text
+alerts.sensor_id → sensors.id
+alerts.prediction_id → predictions.id
+````
+
+The ORM relationships are bidirectional.
+
+From an alert:
+
+```
+alert.sensor
+alert.prediction
+```
+
+From a sensor:
+
+```
+sensor.alerts
+```
+
+From a prediction:
+
+```
+prediction.alerts
+```
+
+---
+
+## 23. Alert Database Migration
+
+Alembic detected the new `alerts` table using:
+
+`alembic revision --autogenerate -m "create alerts table"`
+
+Generated migration revision:
+
+`ac2ac07e6fc4`
+
+Previous revision:
+
+`546cde60faa9`
+
+The migration creates:
+
+- `alerts` table
+- primary key on `alerts.id`
+- foreign key from `alerts.sensor_id` to `sensors.id`
+- optional foreign key from `alerts.prediction_id` to `predictions.id`
+- server-generated `created_at` timestamp
+
+The migration was reviewed before being applied.
+
+It was applied using:
+
+`alembic upgrade head`
+
+Current database revision:
+
+`ac2ac07e6fc4 (head)`
+
+The physical PostgreSQL table was verified directly using `psql`.
+
+Verified constraints:
+
+```
+alerts_sensor_id_fkey
+FOREIGN KEY (sensor_id) REFERENCES sensors(id)
+
+alerts_prediction_id_fkey
+FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+```
+
+The current monitoring and alert persistence structure is now:
+
+```
+Machine
+   ↓
+Sensor
+   ├── SensorReading
+   ├── Prediction
+   └── Alert
+        └── optional Prediction
+```
