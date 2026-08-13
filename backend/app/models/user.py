@@ -18,6 +18,7 @@ class User(Base):
     nullable=True,
     )
     role: Mapped["Role | None"] = relationship(back_populates="users")
+    maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(back_populates="performed_by")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -21,3 +21,4 @@ class Machine(Base):
     )
 
     sensors: Mapped[list["Sensor"]] = relationship(back_populates="machine")
+    maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(back_populates="machine")
