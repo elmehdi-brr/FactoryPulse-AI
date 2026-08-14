@@ -1,6 +1,7 @@
 from .alert import Alert
 from .machine import Machine
 from .maintenance_record import MaintenanceRecord
+from .notification import Notification
 from .prediction import Prediction
 from .role import Role
 from .sensor import Sensor
@@ -11,6 +12,7 @@ __all__ = [
     "Alert",
     "Machine",
     "MaintenanceRecord",
+    "Notification",
     "Prediction",
     "Role",
     "Sensor",

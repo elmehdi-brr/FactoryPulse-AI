@@ -42,3 +42,4 @@ class Alert(Base):
     sensor: Mapped["Sensor"] = relationship(back_populates="alerts")
     prediction: Mapped["Prediction | None"] = relationship(back_populates="alerts")
     maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(back_populates="alert")
+    notifications: Mapped[list["Notification"]] = relationship(back_populates="alert")

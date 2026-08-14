@@ -1038,3 +1038,215 @@ Sensor
    └── Alert
         └── optional Prediction
 ```
+
+
+---
+
+## 24. MaintenanceRecord ORM Model
+
+The `MaintenanceRecord` ORM model has been implemented to store maintenance activity performed on industrial machines.
+
+It is defined in:
+
+`backend/app/models/maintenance_record.py`
+
+The model maps to the PostgreSQL table:
+
+`maintenance_records`
+
+Current fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | Integer | Primary key |
+| `machine_id` | Integer | Foreign key referencing the maintained machine |
+| `alert_id` | Integer | Optional foreign key referencing the related alert |
+| `performed_by_user_id` | Integer | Optional foreign key referencing the responsible user/technician |
+| `maintenance_type` | String(50) | Type of maintenance activity |
+| `description` | Text | Detailed maintenance description |
+| `status` | String(30) | Current maintenance state |
+| `performed_at` | DateTime | Optional timestamp when maintenance was performed |
+| `created_at` | DateTime | Timestamp when the record was created |
+
+The `machine_id` field is required and references:
+
+`machines.id`
+
+The optional `alert_id` field references:
+
+`alerts.id`
+
+The optional `performed_by_user_id` field references:
+
+`users.id`
+
+The database relationships are:
+
+```text
+maintenance_records.machine_id → machines.id
+maintenance_records.alert_id → alerts.id
+maintenance_records.performed_by_user_id → users.id
+
+````
+
+The ORM relationships are bidirectional.
+From a maintenance record:
+From a maintenance record:
+
+maintenance_record.machine
+
+maintenance_record.alert
+
+maintenance_record.performed_by
+
+From a machine:
+
+machine.maintenance_records
+
+From an alert:
+
+alert.maintenance_records
+
+From a user:
+
+user.maintenance_records
+
+## 25. MaintenanceRecord Database Migration
+
+Alembic detected the new `maintenance_records` table using:
+
+`alembic revision --autogenerate -m "create maintenance records table"`
+
+Generated migration revision:
+
+`75faada7868d`
+
+Previous revision:
+
+`ac2ac07e6fc4`
+
+The migration creates:
+
+- `maintenance_records` table
+- primary key on `maintenance_records.id`
+- foreign key from `maintenance_records.machine_id` to `machines.id`
+- optional foreign key from `maintenance_records.alert_id` to `alerts.id`
+- optional foreign key from `maintenance_records.performed_by_user_id` to `users.id`
+- server-generated `created_at` timestamp
+
+The migration was reviewed before being applied.
+
+It was applied using:
+
+`alembic upgrade head`
+
+Current database revision:
+
+`75faada7868d (head)`
+
+The physical PostgreSQL table was verified directly using `psql`.
+
+Verified foreign-key constraints:
+
+maintenance_records_alert_id_fkey
+
+FOREIGN KEY (alert_id) REFERENCES alerts(id)
+
+  
+
+maintenance_records_machine_id_fkey
+
+FOREIGN KEY (machine_id) REFERENCES machines(id)
+
+  
+
+maintenance_records_performed_by_user_id_fkey
+
+FOREIGN KEY (performed_by_user_id) REFERENCES users(id)
+
+The current operational persistence structure now includes:
+
+Machine
+
+   ├── Sensor
+
+   │    ├── SensorReading
+
+   │    ├── Prediction
+
+   │    └── Alert
+
+   └── MaintenanceRecord
+
+        ├── optional Alert
+
+        └── optional User
+
+
+
+
+## 26. Notification ORM Model
+
+The `Notification` ORM model has been implemented to persist notifications delivered to users.
+
+It is defined in:
+
+`backend/app/models/notification.py`
+
+The model maps to:
+
+`notifications`
+
+Fields:
+
+- `id` — primary key
+- `user_id` — required foreign key to `users.id`
+- `alert_id` — optional foreign key to `alerts.id`
+- `title` — notification title
+- `message` — notification body
+- `channel` — delivery channel such as `in_app`, `email`, or `sms`
+- `is_read` — tracks whether the user has read the notification
+- `created_at` — server-generated creation timestamp
+
+Relationships:
+
+```text
+notifications.user_id → users.id
+notifications.alert_id → alerts.id
+```
+
+Bidirectional ORM access:
+
+notification.user
+
+notification.alert
+
+  
+
+user.notifications
+
+alert.notifications
+
+## 27. Notification Database Migration
+
+Alembic generated the notification migration using:
+
+`alembic revision --autogenerate -m "create notifications table"`
+
+Migration revision:
+
+`9e42d11f73be`
+
+Previous revision:
+
+`75faada7868d`
+
+The migration creates the `notifications` table together with its primary key and foreign-key constraints.
+
+The migration was applied with:
+
+`alembic upgrade head`
+
+The physical PostgreSQL table was verified directly using `psql`.
+\
+
