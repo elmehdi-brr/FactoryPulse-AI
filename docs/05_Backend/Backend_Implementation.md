@@ -1395,3 +1395,232 @@ Result:
 All schemas imported successfully
 
 The Pydantic schema layer is now ready to be consumed by the service and API layers.
+
+
+---
+
+## 29. Machine Service Layer
+
+The first backend service layer has been implemented for the `Machine` entity.
+
+It is located in:
+
+`backend/app/services/machine_service.py`
+
+The service separates database operations from the HTTP API layer.
+
+Implemented operations:
+
+- `create_machine()`
+- `get_machine_by_id()`
+- `get_machines()`
+- `update_machine()`
+- `delete_machine()`
+
+The service uses SQLAlchemy `AsyncSession` for asynchronous PostgreSQL operations.
+
+### Create
+
+`create_machine()` converts a validated `MachineCreate` schema into a SQLAlchemy `Machine` object.
+
+The object is added to the database session, committed, and refreshed so PostgreSQL-generated values such as `id` and `created_at` are available.
+
+### Read
+
+`get_machine_by_id()` retrieves one machine using its primary key.
+
+`get_machines()` retrieves all machines ordered by ID.
+
+### Update
+
+`update_machine()` uses:
+
+```python
+machine_data.model_dump(exclude_unset=True)
+```
+
+This allows PATCH operations to modify only fields explicitly provided by the client.
+
+### Delete
+
+`delete_machine()` removes the SQLAlchemy object and commits the transaction.
+
+---
+
+## 30. Machine REST API
+
+The Machine REST API has been implemented in:
+
+`backend/app/api/machines.py`
+
+The router uses:
+
+Prefix: /machines
+
+Tag: Machines
+
+Implemented endpoints:
+
+POST   /machines
+
+GET    /machines
+
+GET    /machines/{machine_id}
+
+PATCH  /machines/{machine_id}
+
+DELETE /machines/{machine_id}
+
+The router uses the Machine service layer for database operations and the Pydantic Machine schemas for request validation and response serialization.
+
+The router is registered in:
+
+`backend/app/main.py`
+
+using:
+
+app.include_router(machines_router)
+
+### HTTP Behavior
+
+Successful creation:
+
+POST /machines → 201 Created
+
+Successful reads and updates:
+
+GET /machines → 200 OK
+
+GET /machines/{machine_id} → 200 OK
+
+PATCH /machines/{machine_id} → 200 OK
+
+Successful deletion:
+
+DELETE /machines/{machine_id} → 204 No Content
+
+Missing machines return:
+
+404 Not Found
+
+with:
+
+{
+
+  "detail": "Machine not found"
+
+}
+
+---
+
+## 31. Machine CRUD Integration Test
+
+The complete Machine CRUD lifecycle was manually tested through FastAPI Swagger UI.
+
+Test machine:
+
+Name: Production Line Motor 01
+
+Code: MOTOR-001
+
+Location: Factory Floor A
+
+Status: active
+
+### Create Test
+
+`POST /machines`
+
+Result:
+
+201 Created
+
+PostgreSQL generated:
+
+id = 1
+
+created_at = server-generated timestamp
+
+### Read Test
+
+`GET /machines`
+
+Result:
+
+200 OK
+
+The previously created machine was successfully retrieved from PostgreSQL.
+
+### Update Test
+
+`PATCH /machines/1`
+
+Request:
+
+{
+
+  "location": "Factory Floor B",
+
+  "status": "maintenance"
+
+}
+
+Result:
+
+200 OK
+
+Only the provided fields were modified.
+
+### Read-by-ID Test
+
+`GET /machines/1`
+
+Result:
+
+200 OK
+
+The updated values were successfully retrieved from PostgreSQL.
+
+### Delete Test
+
+`DELETE /machines/1`
+
+Result:
+
+204 No Content
+
+A subsequent request to:
+
+`GET /machines/1`
+
+returned:
+
+404 Not Found
+
+confirming that the database record had been deleted.
+
+The first complete PostgreSQL-backed CRUD REST API in FactoryPulse AI is therefore operational.
+
+Current architecture:
+
+Swagger / Client
+
+       ↓
+
+FastAPI Router
+
+       ↓
+
+Pydantic Schemas
+
+       ↓
+
+Machine Service
+
+       ↓
+
+SQLAlchemy ORM
+
+       ↓
+
+PostgreSQL
