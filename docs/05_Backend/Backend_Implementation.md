@@ -1250,3 +1250,148 @@ The migration was applied with:
 The physical PostgreSQL table was verified directly using `psql`.
 \
 
+
+
+------
+
+## 28. Pydantic Schema Layer
+
+The backend Pydantic schema layer has been implemented under:
+
+`backend/app/schemas/`
+
+Its purpose is to define the structure of data accepted by and returned from the FactoryPulse AI API.
+
+The current schema package contains:
+
+```text
+app/schemas/
+├── __init__.py
+├── alert.py
+├── machine.py
+├── maintenance_record.py
+├── notification.py
+├── prediction.py
+├── role.py
+├── sensor.py
+├── sensor_reading.py
+└── user.py
+```
+
+### Machine Schemas
+
+Implemented schemas:
+
+- `MachineCreate`
+- `MachineUpdate`
+- `MachineResponse`
+
+These schemas support machine creation, partial updates, and API responses.
+
+### Sensor Schemas
+
+Implemented schemas:
+
+- `SensorCreate`
+- `SensorUpdate`
+- `SensorResponse`
+
+Sensors are associated with machines through `machine_id`.
+
+### SensorReading Schemas
+
+Implemented schemas:
+
+- `SensorReadingCreate`
+- `SensorReadingResponse`
+
+Sensor readings contain the sensor identifier, measured value, and recorded timestamp.
+
+### Prediction Schemas
+
+Implemented schemas:
+
+- `PredictionCreate`
+- `PredictionResponse`
+
+Prediction schemas support AI-generated values, anomaly scores, anomaly state, model name, and model version.
+
+### Alert Schemas
+
+Implemented schemas:
+
+- `AlertCreate`
+- `AlertUpdate`
+- `AlertResponse`
+
+Alerts can be associated with both a sensor and an optional prediction.
+
+### MaintenanceRecord Schemas
+
+Implemented schemas:
+
+- `MaintenanceRecordCreate`
+- `MaintenanceRecordUpdate`
+- `MaintenanceRecordResponse`
+
+Maintenance records support machine maintenance tracking, optional alert references, responsible users, maintenance type, status, description, and execution time.
+
+### Notification Schemas
+
+Implemented schemas:
+
+- `NotificationCreate`
+- `NotificationUpdate`
+- `NotificationResponse`
+
+Notifications are associated with users and may optionally reference an alert.
+
+They support notification channels and read/unread states.
+
+### Role Schemas
+
+Implemented schemas:
+
+- `RoleCreate`
+- `RoleUpdate`
+- `RoleResponse`
+
+These schemas provide validation for application roles.
+
+### User Schemas
+
+Implemented schemas:
+
+- `UserCreate`
+- `UserUpdate`
+- `UserResponse`
+
+The API accepts a plain `password` during user creation or password updates.
+
+The database model itself stores the resulting hashed value in `hashed_password`.
+
+Passwords must therefore be hashed in the service/authentication layer before persistence.
+
+### ORM Serialization
+
+Response schemas use:
+
+ConfigDict(from_attributes=True)
+
+This allows Pydantic to serialize SQLAlchemy ORM objects directly into API response models.
+
+### Schema Package Registration
+
+All public schemas are exported through:
+
+`app/schemas/__init__.py`
+
+The complete schema package was verified using:
+
+python -c "import app.schemas; print('All schemas imported successfully')"
+
+Result:
+
+All schemas imported successfully
+
+The Pydantic schema layer is now ready to be consumed by the service and API layers.
