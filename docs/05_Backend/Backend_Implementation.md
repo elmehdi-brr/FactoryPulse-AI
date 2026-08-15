@@ -1783,3 +1783,162 @@ PostgreSQL
        ↓
 
 Machine ↔ Sensor relationship
+
+
+---
+
+## 35. SensorReading Service Layer
+
+The SensorReading service layer has been implemented in:
+
+`backend/app/services/sensor_reading_service.py`
+
+Unlike standard CRUD entities, sensor readings are treated primarily as historical time-series data.
+
+Implemented operations:
+
+- `create_sensor_reading()`
+- `get_sensor_reading_by_id()`
+- `get_sensor_readings()`
+- `get_readings_by_sensor()`
+
+Sensor readings are ordered by `recorded_at` in descending order so the most recent measurements are returned first.
+
+Update and delete operations have intentionally not been added at this stage because sensor measurements represent historical industrial observations.
+
+---
+
+## 36. SensorReading REST API
+
+The SensorReading REST API has been implemented in:
+
+`backend/app/api/sensor_readings.py`
+
+Implemented endpoints:
+
+```text
+POST /sensor-readings
+GET  /sensor-readings
+GET  /sensor-readings/{reading_id}
+GET  /sensors/{sensor_id}/readings
+```
+
+The router is registered in:
+
+`backend/app/main.py`
+
+Before a reading is created, the API verifies that the referenced sensor exists.
+
+If the sensor does not exist, the API returns:
+
+404 Not Found
+
+with:
+
+{
+
+  "detail": "Sensor not found"
+
+}
+
+This prevents orphan sensor readings from being stored.
+
+---
+
+## 37. SensorReading Integration Test
+
+A sensor reading was successfully created for an existing temperature sensor.
+
+Example measurement:
+
+Temperature = 72.6 °C
+
+The complete data relationship was successfully tested:
+
+Machine
+
+   ↓
+
+Sensor
+
+   ↓
+
+SensorReading
+
+   ↓
+
+PostgreSQL
+
+The following API operations were verified through Swagger:
+
+POST /sensor-readings
+
+→ 201 Created
+
+  
+
+GET /sensor-readings
+
+→ 200 OK
+
+  
+
+GET /sensor-readings/{reading_id}
+
+→ 200 OK
+
+  
+
+GET /sensors/{sensor_id}/readings
+
+→ 200 OK
+
+The sensor-specific readings endpoint confirms that FactoryPulse can retrieve the historical measurements belonging to one sensor.
+
+A reading creation request using a nonexistent sensor was also tested.
+
+Example:
+
+{
+
+  "sensor_id": 999,
+
+  "value": 85.3
+
+}
+
+Result:
+
+404 Not Found
+
+Response:
+
+{
+
+  "detail": "Sensor not found"
+
+}
+
+This confirms that SensorReading integrity is enforced at the API layer.
+
+FactoryPulse can now persist actual industrial time-series measurements.
+
+Current industrial data pipeline:
+
+Machine
+
+   ↓
+
+Sensor
+
+   ↓
+
+SensorReading
+
+   ↓
+
+Historical Time-Series Data
+
+   ↓
+
+PostgreSQL
