@@ -1624,3 +1624,162 @@ SQLAlchemy ORM
        ↓
 
 PostgreSQL
+
+---
+
+## 32. Sensor Service Layer
+
+The Sensor service layer has been implemented in:
+
+`backend/app/services/sensor_service.py`
+
+Implemented operations:
+
+- `create_sensor()`
+- `get_sensor_by_id()`
+- `get_sensors()`
+- `update_sensor()`
+- `delete_sensor()`
+
+The service uses SQLAlchemy `AsyncSession` and follows the same CRUD architecture established for machines.
+
+---
+
+## 33. Sensor REST API
+
+The Sensor API has been implemented in:
+
+`backend/app/api/sensors.py`
+
+Implemented endpoints:
+
+```text
+POST   /sensors
+GET    /sensors
+GET    /sensors/{sensor_id}
+PATCH  /sensors/{sensor_id}
+DELETE /sensors/{sensor_id}
+```
+
+
+The Sensor router is registered in:
+
+`backend/app/main.py`
+
+The API validates the `machine_id` before creating or moving a sensor.
+
+If the referenced machine does not exist, the API returns:
+
+404 Not Found
+
+with:
+
+{
+
+  "detail": "Machine not found"
+
+}
+
+This prevents sensors from being associated with nonexistent machines.
+
+---
+
+## 34. Machine–Sensor Integration Test
+
+A real machine was created through:
+
+`POST /machines`
+
+The created machine received:
+
+id = 2
+
+A sensor was then created using:
+
+{
+
+  "machine_id": 2,
+
+  "name": "Motor Temperature Sensor",
+
+  "sensor_type": "temperature",
+
+  "unit": "°C",
+
+  "status": "active"
+
+}
+
+Result:
+
+201 Created
+
+The sensor received:
+
+id = 1
+
+machine_id = 2
+
+This confirmed the working relationship:
+
+Machine #2
+
+   ↓
+
+Sensor #1
+
+The following Sensor CRUD operations were successfully tested through Swagger:
+
+POST   /sensors              → 201 Created
+
+GET    /sensors/{sensor_id}  → 200 OK
+
+PATCH  /sensors/{sensor_id}  → 200 OK
+
+DELETE /sensors/{sensor_id}  → 204 No Content
+
+After deletion:
+
+GET /sensors/1
+
+returned:
+
+404 Not Found
+
+with:
+
+{
+
+  "detail": "Sensor not found"
+
+}
+
+The Sensor CRUD API and Machine–Sensor relationship are therefore operational.
+
+Current backend flow:
+
+Client / Swagger
+
+       ↓
+
+FastAPI Sensor Router
+
+       ↓
+
+Pydantic Sensor Schemas
+
+       ↓
+
+Sensor Service
+
+       ↓
+
+SQLAlchemy ORM
+
+       ↓
+
+PostgreSQL
+
+       ↓
+
+Machine ↔ Sensor relationship
