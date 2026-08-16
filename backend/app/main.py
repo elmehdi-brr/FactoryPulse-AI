@@ -5,6 +5,7 @@ from app.api.machines import router as machines_router
 from app.api.sensors import router as sensors_router
 from app.api.sensor_readings import router as sensor_readings_router
 from app.api.predictions import router as predictions_router
+from app.api.alerts import router as alerts_router
 from app.core.config import settings
 
 
@@ -15,3 +16,4 @@ app.include_router(machines_router)
 app.include_router(sensors_router)
 app.include_router(sensor_readings_router)
 app.include_router(predictions_router)
+app.include_router(alerts_router)

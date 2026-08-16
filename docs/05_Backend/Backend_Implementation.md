@@ -2069,3 +2069,209 @@ Prediction
 PostgreSQL
 
 The Prediction persistence layer is ready to receive outputs from the future AI/anomaly-detection engine.
+
+
+---
+
+## 41. Alert Service Layer
+
+The Alert service layer has been implemented in:
+
+`backend/app/services/alert_service.py`
+
+Implemented operations:
+
+- `create_alert()`
+- `get_alert_by_id()`
+- `get_alerts()`
+- `get_alerts_by_sensor()`
+- `update_alert()`
+
+Alerts are ordered by `created_at` in descending order.
+
+Unlike standard CRUD entities, alerts are not deleted at this stage because they represent important operational history.
+
+Instead, alerts can move through states such as:
+
+`open → acknowledged → resolved`
+
+The service supports partial updates using:
+
+`model_dump(exclude_unset=True)`
+
+This allows an API client to modify only selected alert fields without replacing the entire record.
+
+---
+
+## 42. Alert REST API
+
+The Alert REST API has been implemented in:
+
+`backend/app/api/alerts.py`
+
+Implemented endpoints:
+
+`POST /alerts`
+
+`GET /alerts`
+
+`GET /alerts/{alert_id}`
+
+`GET /sensors/{sensor_id}/alerts`
+
+`PATCH /alerts/{alert_id}`
+
+The Alert router is registered in:
+
+`backend/app/main.py`
+
+Before an alert is created, FactoryPulse validates that the referenced sensor exists.
+
+If the sensor does not exist, the API returns:
+
+`404 Not Found`
+
+The optional `prediction_id` is also validated.
+
+If a prediction ID is provided, the API verifies:
+
+1. The prediction exists.
+2. The prediction belongs to the same sensor referenced by the alert.
+
+This prevents inconsistent industrial relationships such as:
+
+`Alert.sensor_id = 3`
+
+while:
+
+`Prediction.sensor_id = 2`
+
+In that situation, the API returns:
+
+`400 Bad Request`
+
+with:
+
+`Prediction does not belong to the specified sensor`
+
+---
+
+## 43. Alert Integration Test
+
+A real alert was created and linked to an existing AI-style prediction.
+
+Test alert:
+
+`Sensor ID: 2`
+
+`Prediction ID: 1`
+
+`Severity: high`
+
+`Title: Abnormal motor temperature detected`
+
+`Message: The AI model detected an abnormal temperature pattern for this motor.`
+
+`Status: open`
+
+The alert was created using:
+
+`POST /alerts`
+
+Result:
+
+`201 Created`
+
+The alert received:
+
+`id = 1`
+
+and a server-generated `created_at` timestamp.
+
+The following read operations were successfully tested:
+
+`GET /alerts → 200 OK`
+
+`GET /alerts/{alert_id} → 200 OK`
+
+The alert status was then updated using:
+
+`PATCH /alerts/1`
+
+with:
+
+`status = acknowledged`
+
+Result:
+
+`200 OK`
+
+A subsequent read confirmed that the new status was persisted.
+
+During testing, Swagger's automatically generated `"string"` example values were accidentally submitted in an earlier PATCH request.
+
+Those values were subsequently restored correctly.
+
+This confirmed that partial updates using `exclude_unset=True` behave as expected: only fields explicitly included in a PATCH request are changed.
+
+---
+
+## 44. Prediction–Sensor Consistency Validation
+
+A second temporary sensor was created in order to test relationship consistency.
+
+The existing prediction belonged to:
+
+`Sensor #2`
+
+An invalid alert creation was deliberately attempted using:
+
+`Sensor #3`
+
+together with:
+
+`Prediction #1`
+
+Because Prediction #1 belongs to Sensor #2, FactoryPulse rejected the request.
+
+Result:
+
+`400 Bad Request`
+
+Response:
+
+`Prediction does not belong to the specified sensor`
+
+This confirms that FactoryPulse enforces the relationship:
+
+`Alert.sensor_id = Prediction.sensor_id`
+
+when a prediction is attached to an alert.
+
+The temporary test sensor was then deleted successfully.
+
+The complete operational intelligence pipeline currently implemented is:
+
+`Machine`
+`↓`
+`Sensor`
+`↓`
+`SensorReading`
+`↓`
+`Prediction`
+`↓`
+`Alert`
+
+At this stage:
+
+- machines can be managed through the API
+- sensors can be attached to machines
+- real sensor readings can be stored
+- AI-style prediction outputs can be persisted
+- anomaly predictions can be converted into operational alerts
+- alert status can be managed
+- invalid sensor/prediction relationships are rejected
+
+The next milestone is:
+
+**Implement the Notification service and REST API so alerts can be delivered to FactoryPulse users.**
