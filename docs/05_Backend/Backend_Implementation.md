@@ -1942,3 +1942,130 @@ Historical Time-Series Data
    ↓
 
 PostgreSQL
+
+---
+
+## 38. Prediction Service Layer
+
+The Prediction service layer has been implemented in:
+
+`backend/app/services/prediction_service.py`
+
+Implemented operations:
+
+- `create_prediction()`
+- `get_prediction_by_id()`
+- `get_predictions()`
+- `get_predictions_by_sensor()`
+
+Predictions are ordered by `predicted_at` in descending order.
+
+The service persists AI prediction outputs such as:
+
+- predicted value
+- anomaly score
+- anomaly status
+- model name
+- model version
+
+At this stage, prediction values are manually supplied for backend testing.
+
+The actual machine-learning pipeline will generate these values later.
+
+---
+
+## 39. Prediction REST API
+
+The Prediction API has been implemented in:
+
+`backend/app/api/predictions.py`
+
+Implemented endpoints:
+
+```text
+POST /predictions
+GET  /predictions
+GET  /predictions/{prediction_id}
+GET  /sensors/{sensor_id}/predictions
+```
+
+Before creating a prediction, the API verifies that the referenced sensor exists.
+
+A nonexistent sensor returns:
+
+404 Not Found
+
+with:
+
+{
+
+  "detail": "Sensor not found"
+
+}
+
+This prevents orphan prediction records.
+
+---
+
+## 40. Prediction Integration Test
+
+A test AI-style prediction was successfully persisted.
+
+Example:
+```
+
+sensor_id = 2
+
+predicted_value = 78.4
+
+anomaly_score = 0.87
+
+is_anomaly = true
+
+model_name = xgboost
+
+model_version = 1.0
+```
+
+
+The following endpoints were successfully tested:
+```
+
+POST /predictions
+→ 201 Created
+GET /predictions
+→ 200 OK
+GET /sensors/{sensor_id}/predictions
+→ 200 OK
+```
+The current industrial intelligence pipeline is now:
+
+Machine
+
+   ↓
+
+Sensor
+
+   ↓
+
+SensorReading
+
+   ↓
+
+Prediction
+
+   ├── predicted_value
+
+   ├── anomaly_score
+
+   ├── is_anomaly
+
+   ├── model_name
+
+   └── model_version
+
+   ↓
+
+PostgreSQL
+
+The Prediction persistence layer is ready to receive outputs from the future AI/anomaly-detection engine.

@@ -1,0 +1,85 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.session import get_db
+from app.schemas.prediction import PredictionCreate, PredictionResponse
+from app.services.prediction_service import (
+    create_prediction,
+    get_prediction_by_id,
+    get_predictions,
+    get_predictions_by_sensor,
+)
+from app.services.sensor_service import get_sensor_by_id
+
+
+router = APIRouter(
+    tags=["Predictions"],
+)
+
+
+@router.post(
+    "/predictions",
+    response_model=PredictionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_prediction_endpoint(
+    prediction_data: PredictionCreate,
+    db: AsyncSession = Depends(get_db),
+) -> PredictionResponse:
+    sensor = await get_sensor_by_id(db, prediction_data.sensor_id)
+
+    if sensor is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sensor not found",
+        )
+
+    return await create_prediction(db, prediction_data)
+
+
+@router.get(
+    "/predictions",
+    response_model=list[PredictionResponse],
+)
+async def get_predictions_endpoint(
+    db: AsyncSession = Depends(get_db),
+) -> list[PredictionResponse]:
+    return await get_predictions(db)
+
+
+@router.get(
+    "/predictions/{prediction_id}",
+    response_model=PredictionResponse,
+)
+async def get_prediction_endpoint(
+    prediction_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> PredictionResponse:
+    prediction = await get_prediction_by_id(db, prediction_id)
+
+    if prediction is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prediction not found",
+        )
+
+    return prediction
+
+
+@router.get(
+    "/sensors/{sensor_id}/predictions",
+    response_model=list[PredictionResponse],
+)
+async def get_sensor_predictions_endpoint(
+    sensor_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> list[PredictionResponse]:
+    sensor = await get_sensor_by_id(db, sensor_id)
+
+    if sensor is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sensor not found",
+        )
+
+    return await get_predictions_by_sensor(db, sensor_id)
