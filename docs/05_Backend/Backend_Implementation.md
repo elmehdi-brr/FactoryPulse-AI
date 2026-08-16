@@ -2275,3 +2275,209 @@ At this stage:
 The next milestone is:
 
 **Implement the Notification service and REST API so alerts can be delivered to FactoryPulse users.**
+
+---
+
+## 45. Notification Service Layer
+
+The Notification service layer has been implemented in:
+
+`backend/app/services/notification_service.py`
+
+Implemented operations:
+
+- `create_notification()`
+- `get_notification_by_id()`
+- `get_notifications()`
+- `get_notifications_by_user()`
+- `update_notification()`
+
+Notifications are ordered by `created_at` in descending order.
+
+At this stage, notifications are not deleted because they can be useful as historical user-facing system records.
+
+The update operation supports partial updates using:
+
+`model_dump(exclude_unset=True)`
+
+This is currently used primarily to modify the read/unread state of a notification.
+
+---
+
+## 46. Minimal User Lookup Service
+
+A minimal User lookup service has been implemented in:
+
+`backend/app/services/user_service.py`
+
+Current operation:
+
+- `get_user_by_id()`
+
+The purpose of this service at the current stage is to validate that a notification references a real FactoryPulse user.
+
+The complete User and Authentication subsystem has not yet been implemented.
+
+This service will later be expanded as part of the authentication and authorization milestone.
+
+---
+
+## 47. Notification REST API
+
+The Notification REST API has been implemented in:
+
+`backend/app/api/notifications.py`
+
+Implemented endpoints:
+
+`POST /notifications`
+
+`GET /notifications`
+
+`GET /notifications/{notification_id}`
+
+`GET /users/{user_id}/notifications`
+
+`PATCH /notifications/{notification_id}`
+
+The Notification router is registered in:
+
+`backend/app/main.py`
+
+Before a notification is created, FactoryPulse validates that the referenced user exists.
+
+If the user does not exist, the API returns:
+
+`404 Not Found`
+
+with:
+
+`User not found`
+
+The optional `alert_id` is also validated.
+
+If an alert ID is provided and does not exist, the API returns:
+
+`404 Not Found`
+
+with:
+
+`Alert not found`
+
+This prevents notifications from referencing invalid users or alerts.
+
+---
+
+## 48. Notification Integration Test
+
+Because the full User/Auth API has not yet been implemented, a temporary development user was inserted directly into PostgreSQL for relationship testing.
+
+Temporary development user:
+
+`id = 1`
+
+`email = operator@factorypulse.local`
+
+`full_name = Factory Operator`
+
+`is_active = true`
+
+The `hashed_password` field contains a temporary development placeholder only.
+
+This is not a real password hash and will be replaced by proper password hashing when the Authentication subsystem is implemented.
+
+A notification was then created for the development user and linked to the existing operational alert.
+
+Test relationship:
+
+`Alert #1`
+`↓`
+`Notification #1`
+`↓`
+`User #1`
+
+Example notification:
+
+`Title: High temperature alert`
+
+`Message: An abnormal motor temperature has been detected and requires attention.`
+
+`Channel: in_app`
+
+`is_read: false`
+
+The notification was created using:
+
+`POST /notifications`
+
+Result:
+
+`201 Created`
+
+The user's notifications were retrieved using:
+
+`GET /users/1/notifications`
+
+Result:
+
+`200 OK`
+
+The notification was then marked as read using:
+
+`PATCH /notifications/{notification_id}`
+
+with:
+
+`is_read = true`
+
+Result:
+
+`200 OK`
+
+A subsequent response confirmed:
+
+`is_read = true`
+
+Validation tests were also performed.
+
+A notification using a nonexistent user:
+
+`user_id = 999`
+
+was rejected with:
+
+`404 Not Found`
+
+`User not found`
+
+A notification using a nonexistent alert:
+
+`alert_id = 999`
+
+was rejected with:
+
+`404 Not Found`
+
+`Alert not found`
+
+The current operational intelligence flow is now:
+
+`Machine`
+`↓`
+`Sensor`
+`↓`
+`SensorReading`
+`↓`
+`Prediction`
+`↓`
+`Alert`
+`↓`
+`Notification`
+`↓`
+`User`
+
+FactoryPulse can therefore now take an AI-style anomaly result, turn it into an operational alert, and deliver that alert as a notification to a user.
+
+The next milestone is:
+
+**Implement the MaintenanceRecord service and REST API so FactoryPulse can track the real maintenance actions performed in response to industrial alerts.**
