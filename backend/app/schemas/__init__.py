@@ -11,6 +11,7 @@ from .role import RoleCreate, RoleResponse, RoleUpdate
 from .sensor import SensorCreate, SensorResponse, SensorUpdate
 from .sensor_reading import SensorReadingCreate, SensorReadingResponse
 from .user import UserCreate, UserResponse, UserUpdate
+from .auth import TokenResponse
 
 __all__ = [
     "AlertCreate",
@@ -38,4 +39,5 @@ __all__ = [
     "UserCreate",
     "UserResponse",
     "UserUpdate",
+    "TokenResponse",
 ]
