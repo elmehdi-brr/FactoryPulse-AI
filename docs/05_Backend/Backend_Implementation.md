@@ -2758,3 +2758,203 @@ The broader FactoryPulse vision is not limited to machine monitoring or predicti
 Next milestone:
 
 **Review the completed core backend and begin the next major backend area, including User Authentication and Role-Based Access Control before progressing toward automated AI inference and broader industrial modules.**
+
+
+---
+
+## 54. Authentication Service
+
+The authentication service has been implemented in:
+
+`backend/app/services/auth_service.py`
+
+The service provides:
+
+`authenticate_user()`
+
+Authentication follows this process:
+
+`Email`
+`↓`
+`Normalize and find user in PostgreSQL`
+`↓`
+`Verify password using Argon2`
+`↓`
+`Verify that the user is active`
+`↓`
+`Return authenticated User`
+
+If the email does not exist, the password is incorrect, or the user is inactive, authentication fails.
+
+Plain-text passwords are never stored in PostgreSQL.
+
+Only Argon2 password hashes are stored in:
+
+`users.hashed_password`
+
+---
+
+## 55. JWT Login API
+
+The authentication API has been implemented in:
+
+`backend/app/api/auth.py`
+
+Current endpoint:
+
+`POST /auth/login`
+
+The login endpoint uses FastAPI's OAuth2 password form.
+
+For FactoryPulse, the OAuth2 `username` field represents the user's email address.
+
+Authentication flow:
+
+`Email + Password`
+`↓`
+`authenticate_user()`
+`↓`
+`Argon2 password verification`
+`↓`
+`JWT access token generation`
+`↓`
+`Bearer token returned to the client`
+
+A successful login returns:
+
+`200 OK`
+
+with a response containing:
+
+`access_token`
+
+and:
+
+`token_type = bearer`
+
+The JWT subject (`sub`) contains the authenticated user's database ID.
+
+Using the stable user ID as the JWT subject allows the user's email address to change later without invalidating the identity model.
+
+Invalid credentials return:
+
+`401 Unauthorized`
+
+with:
+
+`Incorrect email or password`
+
+---
+
+## 56. Current User Authentication Dependency
+
+A reusable authentication dependency has been implemented in:
+
+`backend/app/api/dependencies.py`
+
+The dependency:
+
+`get_current_user()`
+
+uses FastAPI's OAuth2 bearer-token mechanism.
+
+Authentication of protected requests follows this flow:
+
+`Authorization: Bearer <JWT>`
+`↓`
+`Extract access token`
+`↓`
+`Decode and validate JWT`
+`↓`
+`Read user ID from JWT subject`
+`↓`
+`Load user from PostgreSQL`
+`↓`
+`Verify user exists`
+`↓`
+`Verify user is active`
+`↓`
+`Return authenticated User`
+
+Invalid, malformed, or expired credentials return:
+
+`401 Unauthorized`
+
+Inactive users return:
+
+`403 Forbidden`
+
+This dependency can now be reused by any FactoryPulse endpoint that requires authentication.
+
+---
+
+## 57. Authenticated User Endpoint
+
+The following protected endpoint has been implemented:
+
+`GET /auth/me`
+
+The endpoint uses:
+
+`get_current_user()`
+
+and returns information about the user represented by the supplied JWT.
+
+The endpoint was tested without authentication.
+
+Result:
+
+`401 Unauthorized`
+
+The user was then authenticated through Swagger using:
+
+`operator@factorypulse.local`
+
+with the local development password.
+
+After authorization:
+
+`GET /auth/me`
+
+returned:
+
+`200 OK`
+
+and correctly identified:
+
+`User #1`
+
+`Factory Operator`
+
+This confirms the complete authentication flow:
+
+`Email + Password`
+`↓`
+`Argon2 verification`
+`↓`
+`POST /auth/login`
+`↓`
+`JWT access token`
+`↓`
+`Bearer authentication`
+`↓`
+`JWT validation`
+`↓`
+`User loaded from PostgreSQL`
+`↓`
+`GET /auth/me`
+`↓`
+`Authenticated FactoryPulse User`
+
+FactoryPulse can therefore now determine both:
+
+`Who is attempting to log in?`
+
+and:
+
+`Who is making an authenticated API request?`
+
+The next authentication milestone is:
+
+**Implement Role-Based Access Control (RBAC) so FactoryPulse can determine what each authenticated user is allowed to do.**
+

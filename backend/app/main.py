@@ -9,6 +9,7 @@ from app.api.alerts import router as alerts_router
 from app.api.notifications import router as notifications_router
 from app.api.maintenance_records import router as maintenance_records_router
 from app.core.config import settings
+from app.api.auth import router as auth_router
 
 
 app = FastAPI(title=settings.app_name)
@@ -21,3 +22,4 @@ app.include_router(predictions_router)
 app.include_router(alerts_router)
 app.include_router(notifications_router)
 app.include_router(maintenance_records_router)
+app.include_router(auth_router)
