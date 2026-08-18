@@ -2958,3 +2958,227 @@ The next authentication milestone is:
 
 **Implement Role-Based Access Control (RBAC) so FactoryPulse can determine what each authenticated user is allowed to do.**
 
+---
+
+## 58. Role-Based Access Control Foundation
+
+FactoryPulse now includes the foundation for Role-Based Access Control (RBAC).
+
+The central role definitions are located in:
+
+`backend/app/core/rbac.py`
+
+The current platform roles are:
+
+- `admin`
+- `manager`
+- `technician`
+- `operator`
+
+These roles are represented through the `RoleName` enum so role names do not need to be repeatedly hard-coded throughout the backend.
+
+The current role hierarchy is conceptual rather than strictly hierarchical.
+
+Each endpoint will explicitly define which roles are permitted to access it.
+
+The current intended responsibilities are:
+
+`admin`
+
+Full administrative access to FactoryPulse, including users, roles, configuration, and industrial resources.
+
+`manager`
+
+Management-oriented access to industrial operations, dashboards, reporting, alerts, and maintenance oversight.
+
+`technician`
+
+Technical and maintenance-oriented access to machines, sensors, alerts, and maintenance operations.
+
+`operator`
+
+Day-to-day monitoring and limited industrial operational access.
+
+These permissions can be refined as FactoryPulse grows.
+
+---
+
+## 59. Reusable RBAC Dependency
+
+A reusable RBAC authorization dependency has been implemented in:
+
+`backend/app/api/dependencies.py`
+
+The function:
+
+`require_roles()`
+
+can be attached to protected FastAPI endpoints.
+
+The authorization flow is:
+
+`Bearer JWT`
+
+`↓`
+
+`get_current_user()`
+
+`↓`
+
+`Authenticated User`
+
+`↓`
+
+`user.role_id`
+
+`↓`
+
+`Role loaded from PostgreSQL`
+
+`↓`
+
+`Compare current role with allowed endpoint roles`
+
+`↓`
+
+`Access granted or 403 Forbidden`
+
+If the authenticated user has no assigned role, FactoryPulse returns:
+
+`403 Forbidden`
+
+with:
+
+`User has no assigned role`
+
+If the referenced role no longer exists, FactoryPulse returns:
+
+`403 Forbidden`
+
+with:
+
+`User role does not exist`
+
+If the user's role exists but is not permitted to access the endpoint, FactoryPulse returns:
+
+`403 Forbidden`
+
+with:
+
+`Insufficient permissions`
+
+The user's current role is loaded from PostgreSQL during authorization.
+
+The JWT currently stores the user's ID rather than the user's role.
+
+This means role changes can take effect without issuing a new JWT because FactoryPulse retrieves the user's current database role when checking access.
+
+---
+
+## 60. Standard RBAC Role Seeding
+
+A reusable RBAC seed script has been implemented in:
+
+`backend/app/scripts/seed_rbac.py`
+
+The script creates the standard FactoryPulse roles:
+
+`admin`
+
+`manager`
+
+`technician`
+
+`operator`
+
+The script is idempotent.
+
+Running it multiple times does not create duplicate role records.
+
+The development user:
+
+`operator@factorypulse.local`
+
+was automatically assigned the:
+
+`operator`
+
+role when the role data was seeded.
+
+The following roles were verified directly in PostgreSQL:
+
+`admin`
+
+`manager`
+
+`technician`
+
+`operator`
+
+The development user relationship was also verified:
+
+`operator@factorypulse.local → operator`
+
+---
+
+## 61. RBAC Integration Test
+
+A temporary admin-only endpoint was created to validate FactoryPulse authorization behavior.
+
+The development user initially had:
+
+`role = operator`
+
+The user authenticated successfully using the existing JWT authentication system.
+
+The operator then attempted to access the admin-only endpoint.
+
+Result:
+
+`403 Forbidden`
+
+Response:
+
+`Insufficient permissions`
+
+The same development user was then temporarily assigned:
+
+`role = admin`
+
+The same authenticated request was executed again.
+
+Result:
+
+`200 OK`
+
+Response:
+
+`Admin access granted`
+
+This verified both sides of the authorization mechanism:
+
+`operator → admin-only endpoint → 403 Forbidden`
+
+`admin → admin-only endpoint → 200 OK`
+
+The development user was subsequently restored to:
+
+`operator`
+
+The temporary RBAC test endpoint was removed after successful verification.
+
+FactoryPulse can now determine:
+
+`Who is making the request?`
+
+through JWT authentication,
+
+and:
+
+`What is this user allowed to access?`
+
+through RBAC.
+
+The next milestone is:
+
+**Apply RBAC policies to the real FactoryPulse API endpoints and define the initial permission matrix for Admin, Manager, Technician, and Operator roles.**
