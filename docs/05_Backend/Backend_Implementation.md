@@ -3603,3 +3603,420 @@ The next major milestone is:
 
 **Implement real User and Role administration APIs so authorized administrators can create users, assign roles, activate/deactivate accounts, and manage FactoryPulse access without directly editing PostgreSQL.**
 
+
+
+---
+
+## 70. User Administration Service
+
+The User service has been expanded to support real administrative account management.
+
+Implemented operations include:
+
+- `get_user_by_id()`
+- `get_user_by_email()`
+- `get_users()`
+- `create_user()`
+- `update_user()`
+
+User creation normalizes email addresses and securely hashes passwords using Argon2 before storing them in PostgreSQL.
+
+Plain-text passwords are never persisted.
+
+User updates support partial modification using:
+
+`model_dump(exclude_unset=True)`
+
+Supported administrative changes include:
+
+- email address
+- full name
+- password
+- assigned role
+- active/inactive account state
+
+When a password is updated, FactoryPulse generates a new Argon2 password hash before committing the change.
+
+---
+
+## 71. Role Administration Service
+
+The Role service has been expanded to support:
+
+- `get_role_by_id()`
+- `get_role_by_name()`
+- `get_roles()`
+
+FactoryPulse currently uses four predefined roles:
+
+- `admin`
+- `manager`
+- `technician`
+- `operator`
+
+These roles remain system-defined because the authorization policy is currently implemented around the central `RoleName` definitions.
+
+At this stage, arbitrary custom role creation is intentionally not exposed through the API.
+
+---
+
+## 72. Admin-Only User API
+
+An admin-only User administration API has been implemented in:
+
+`backend/app/api/users.py`
+
+Implemented endpoints:
+
+`GET /users`
+
+`POST /users`
+
+`GET /users/{user_id}`
+
+`PATCH /users/{user_id}`
+
+All endpoints require:
+
+`RoleName.ADMIN`
+
+The API allows FactoryPulse administrators to manage user accounts without directly editing PostgreSQL.
+
+User creation validates:
+
+- duplicate email addresses
+- assigned role existence
+
+Duplicate emails return:
+
+`409 Conflict`
+
+with:
+
+`Email already registered`
+
+Invalid role IDs return:
+
+`404 Not Found`
+
+with:
+
+`Role not found`
+
+---
+
+## 73. Admin-Only Role API
+
+The Role administration API has been implemented in:
+
+`backend/app/api/roles.py`
+
+Implemented endpoints:
+
+`GET /roles`
+
+`GET /roles/{role_id}`
+
+Both endpoints are restricted to:
+
+`admin`
+
+Roles are currently read-only through the API.
+
+This allows administrators to inspect available FactoryPulse roles while preserving the centrally defined RBAC policy.
+
+---
+
+## 74. User Administration RBAC Test
+
+The existing development user initially had:
+
+`role = operator`
+
+The Operator attempted to access:
+
+`GET /users`
+
+Result:
+
+`403 Forbidden`
+
+The Operator also attempted:
+
+`GET /roles`
+
+Result:
+
+`403 Forbidden`
+
+This confirmed that non-admin users cannot access account or role administration.
+
+The development user was then temporarily promoted to:
+
+`admin`
+
+The same endpoints returned:
+
+`200 OK`
+
+A dedicated administrator account was then created through:
+
+`POST /users`
+
+The new account used:
+
+`role_id = 1`
+
+corresponding to:
+
+`admin`
+
+The account was created successfully with:
+
+`201 Created`
+
+The response did not expose the plain password or stored password hash.
+
+The original development user was then restored to:
+
+`operator`.
+
+---
+
+## 75. Dedicated Administrator Account
+
+A dedicated FactoryPulse administrator account was successfully created.
+
+The new administrator authenticated through:
+
+`POST /auth/login`
+
+and successfully accessed:
+
+`GET /auth/me`
+
+The account was identified with:
+
+`role_id = 1`
+
+The administrator successfully accessed:
+
+`GET /users`
+
+and:
+
+`GET /roles`
+
+Both returned:
+
+`200 OK`
+
+The dedicated Administrator also successfully updated User #1 through:
+
+`PATCH /users/1`
+
+This confirmed that FactoryPulse account administration can now be performed entirely through the protected API instead of direct PostgreSQL modifications.
+
+---
+
+## 76. Password Reset and Account Activation
+
+The administrator successfully updated the Operator account password using:
+
+`PATCH /users/1`
+
+The new password was passed through the FactoryPulse Argon2 hashing layer before being persisted.
+
+The User API response did not expose the password or hash.
+
+The Operator account was also tested using the:
+
+`is_active`
+
+field.
+
+When:
+
+`is_active = false`
+
+the Operator could no longer authenticate.
+
+Login returned:
+
+`401 Unauthorized`
+
+After the administrator restored:
+
+`is_active = true`
+
+and set the new password, the Operator successfully authenticated again.
+
+This confirms that FactoryPulse administrators can:
+
+- reset user passwords
+- deactivate accounts
+- reactivate accounts
+
+without direct database access.
+
+---
+
+## 77. User Administration Validation Tests
+
+Duplicate email protection was tested by attempting to create a second user with:
+
+`operator@factorypulse.local`
+
+FactoryPulse rejected the request.
+
+Result:
+
+`409 Conflict`
+
+Response:
+
+`Email already registered`
+
+Invalid role validation was tested using:
+
+`role_id = 999`
+
+FactoryPulse rejected the request.
+
+Result:
+
+`404 Not Found`
+
+Response:
+
+`Role not found`
+
+No invalid user record was created.
+
+The Operator account was then verified using:
+
+`GET /users/1`
+
+The account remained:
+
+`role_id = 4`
+
+and:
+
+`is_active = true`
+
+---
+
+## 78. Phase 2 — Authentication and RBAC Complete
+
+FactoryPulse now includes a complete initial authentication and authorization foundation.
+
+Implemented security capabilities include:
+
+- Argon2 password hashing
+- secure password verification
+- JWT access-token generation
+- JWT token validation
+- OAuth2 bearer authentication
+- authenticated current-user detection
+- predefined system roles
+- Role-Based Access Control
+- reusable role dependencies
+- ownership-based authorization
+- role seeding
+- admin-only user management
+- admin-only role inspection
+- password reset
+- account activation/deactivation
+- duplicate email protection
+- invalid role validation
+
+The complete security flow is now:
+
+`Email + Password`
+
+`↓`
+
+`Argon2 Verification`
+
+`↓`
+
+`JWT Access Token`
+
+`↓`
+
+`Bearer Authentication`
+
+`↓`
+
+`Authenticated User`
+
+`↓`
+
+`Role loaded from PostgreSQL`
+
+`↓`
+
+`RBAC Authorization`
+
+`↓`
+
+`Optional Resource Ownership Validation`
+
+`↓`
+
+`Authorized FactoryPulse Operation`
+
+FactoryPulse can now determine:
+
+`Who are you?`
+
+through authentication.
+
+`What are you allowed to do?`
+
+through RBAC.
+
+`Are you allowed to access this specific resource?`
+
+through ownership authorization.
+
+`Can an administrator safely manage your account?`
+
+through the protected User administration API.
+
+This completes the initial Phase 2 security milestone.
+
+The next major phase is:
+
+**Phase 3 — Industrial Hierarchy**
+
+The next architecture will expand FactoryPulse beyond machine-centric monitoring by introducing industrial organizational concepts such as:
+
+`Organization / Company`
+
+`↓`
+
+`Site / Factory`
+
+`↓`
+
+`Area / Department`
+
+`↓`
+
+`Production Line`
+
+`↓`
+
+`Machine / Asset`
+
+This will provide the structural foundation needed for future modules such as production monitoring, energy management, quality control, inventory, work orders, multi-site management, and broader industrial analytics.
+
+
+- [[Authentication_and_RBAC]]
+- [[Industrial_Hierarchy]]
+- [[AI_Integration]]
+- [[Testing_Strategy]]
+- [[Logging_and_Monitoring]]
+- [[Deployment_and_DevOps]]

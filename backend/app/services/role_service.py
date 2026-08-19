@@ -24,3 +24,13 @@ async def get_role_by_name(
     )
 
     return result.scalar_one_or_none()
+
+
+async def get_roles(
+    db: AsyncSession,
+) -> list[Role]:
+    result = await db.execute(
+        select(Role).order_by(Role.id)
+    )
+
+    return list(result.scalars().all())

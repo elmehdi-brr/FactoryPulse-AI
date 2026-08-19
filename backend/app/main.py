@@ -10,6 +10,8 @@ from app.api.notifications import router as notifications_router
 from app.api.maintenance_records import router as maintenance_records_router
 from app.core.config import settings
 from app.api.auth import router as auth_router
+from app.api.roles import router as roles_router
+from app.api.users import router as users_router
 
 
 app = FastAPI(title=settings.app_name)
@@ -23,3 +25,5 @@ app.include_router(alerts_router)
 app.include_router(notifications_router)
 app.include_router(maintenance_records_router)
 app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(roles_router)

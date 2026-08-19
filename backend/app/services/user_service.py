@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.user import User
-from app.schemas.user import UserCreate
+from app.schemas.user import UserCreate, UserUpdate
 
 
 async def get_user_by_id(
@@ -30,6 +30,16 @@ async def get_user_by_email(
     return result.scalar_one_or_none()
 
 
+async def get_users(
+    db: AsyncSession,
+) -> list[User]:
+    result = await db.execute(
+        select(User).order_by(User.id)
+    )
+
+    return list(result.scalars().all())
+
+
 async def create_user(
     db: AsyncSession,
     user_data: UserCreate,
@@ -43,6 +53,30 @@ async def create_user(
     )
 
     db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return user
+
+
+async def update_user(
+    db: AsyncSession,
+    user: User,
+    user_data: UserUpdate,
+) -> User:
+    update_data = user_data.model_dump(exclude_unset=True)
+
+    password = update_data.pop("password", None)
+
+    if password is not None:
+        user.hashed_password = hash_password(password)
+
+    if "email" in update_data and update_data["email"] is not None:
+        update_data["email"] = update_data["email"].strip().lower()
+
+    for field, value in update_data.items():
+        setattr(user, field, value)
+
     await db.commit()
     await db.refresh(user)
 
