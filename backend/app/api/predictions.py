@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_roles
+from app.core.rbac import ALL_ROLES, TECHNICAL_WRITE_ROLES
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.prediction import PredictionCreate, PredictionResponse
 from app.services.prediction_service import (
     create_prediction,
@@ -25,6 +28,7 @@ router = APIRouter(
 async def create_prediction_endpoint(
     prediction_data: PredictionCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*TECHNICAL_WRITE_ROLES)),
 ) -> PredictionResponse:
     sensor = await get_sensor_by_id(db, prediction_data.sensor_id)
 
@@ -43,6 +47,7 @@ async def create_prediction_endpoint(
 )
 async def get_predictions_endpoint(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[PredictionResponse]:
     return await get_predictions(db)
 
@@ -54,6 +59,7 @@ async def get_predictions_endpoint(
 async def get_prediction_endpoint(
     prediction_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> PredictionResponse:
     prediction = await get_prediction_by_id(db, prediction_id)
 
@@ -73,6 +79,7 @@ async def get_prediction_endpoint(
 async def get_sensor_predictions_endpoint(
     sensor_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[PredictionResponse]:
     sensor = await get_sensor_by_id(db, sensor_id)
 

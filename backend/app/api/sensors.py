@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_roles
+from app.core.rbac import ALL_ROLES, ASSET_WRITE_ROLES, MANAGEMENT_ROLES
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.sensor import SensorCreate, SensorResponse, SensorUpdate
 from app.services.machine_service import get_machine_by_id
 from app.services.sensor_service import (
@@ -27,6 +30,7 @@ router = APIRouter(
 async def create_sensor_endpoint(
     sensor_data: SensorCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ASSET_WRITE_ROLES)),
 ) -> SensorResponse:
     machine = await get_machine_by_id(db, sensor_data.machine_id)
 
@@ -45,6 +49,7 @@ async def create_sensor_endpoint(
 )
 async def get_sensors_endpoint(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[SensorResponse]:
     return await get_sensors(db)
 
@@ -56,6 +61,7 @@ async def get_sensors_endpoint(
 async def get_sensor_endpoint(
     sensor_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> SensorResponse:
     sensor = await get_sensor_by_id(db, sensor_id)
 
@@ -76,6 +82,7 @@ async def update_sensor_endpoint(
     sensor_id: int,
     sensor_data: SensorUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ASSET_WRITE_ROLES)),
 ) -> SensorResponse:
     sensor = await get_sensor_by_id(db, sensor_id)
 
@@ -104,6 +111,7 @@ async def update_sensor_endpoint(
 async def delete_sensor_endpoint(
     sensor_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*MANAGEMENT_ROLES)),
 ) -> None:
     sensor = await get_sensor_by_id(db, sensor_id)
 

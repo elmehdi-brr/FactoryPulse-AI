@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_roles
+from app.core.rbac import ALL_ROLES, TECHNICAL_WRITE_ROLES
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.maintenance_record import (
     MaintenanceRecordCreate,
     MaintenanceRecordResponse,
@@ -33,6 +36,7 @@ router = APIRouter(
 async def create_maintenance_record_endpoint(
     maintenance_data: MaintenanceRecordCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*TECHNICAL_WRITE_ROLES)),
 ) -> MaintenanceRecordResponse:
     machine = await get_machine_by_id(db, maintenance_data.machine_id)
 
@@ -86,6 +90,7 @@ async def create_maintenance_record_endpoint(
 )
 async def get_maintenance_records_endpoint(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[MaintenanceRecordResponse]:
     return await get_maintenance_records(db)
 
@@ -97,6 +102,7 @@ async def get_maintenance_records_endpoint(
 async def get_maintenance_record_endpoint(
     record_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> MaintenanceRecordResponse:
     record = await get_maintenance_record_by_id(db, record_id)
 
@@ -116,6 +122,7 @@ async def get_maintenance_record_endpoint(
 async def get_machine_maintenance_records_endpoint(
     machine_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[MaintenanceRecordResponse]:
     machine = await get_machine_by_id(db, machine_id)
 
@@ -136,6 +143,7 @@ async def update_maintenance_record_endpoint(
     record_id: int,
     maintenance_data: MaintenanceRecordUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*TECHNICAL_WRITE_ROLES)),
 ) -> MaintenanceRecordResponse:
     record = await get_maintenance_record_by_id(db, record_id)
 

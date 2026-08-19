@@ -3182,3 +3182,424 @@ through RBAC.
 The next milestone is:
 
 **Apply RBAC policies to the real FactoryPulse API endpoints and define the initial permission matrix for Admin, Manager, Technician, and Operator roles.**
+
+
+---
+
+## 62. RBAC Permission Policy
+
+The first FactoryPulse Role-Based Access Control policy has been applied to the operational API.
+
+The standard roles are:
+
+- `admin`
+- `manager`
+- `technician`
+- `operator`
+
+Reusable role groups are defined in:
+
+`backend/app/core/rbac.py`
+
+Current groups include:
+
+`ALL_ROLES`
+
+- admin
+- manager
+- technician
+- operator
+
+`MANAGEMENT_ROLES`
+
+- admin
+- manager
+
+`ASSET_WRITE_ROLES`
+
+- admin
+- manager
+- technician
+
+`TECHNICAL_WRITE_ROLES`
+
+- admin
+- technician
+
+`READING_WRITE_ROLES`
+
+- admin
+- technician
+- operator
+
+These groups allow authorization policies to remain centralized rather than repeating individual role names throughout the API.
+
+---
+
+## 63. Machine and Sensor RBAC
+
+RBAC has been applied to:
+
+`backend/app/api/machines.py`
+
+and:
+
+`backend/app/api/sensors.py`
+
+Current Machine permissions:
+
+`GET /machines`
+
+All authenticated roles.
+
+`GET /machines/{machine_id}`
+
+All authenticated roles.
+
+`POST /machines`
+
+Admin, Manager, Technician.
+
+`PATCH /machines/{machine_id}`
+
+Admin, Manager, Technician.
+
+`DELETE /machines/{machine_id}`
+
+Admin and Manager.
+
+Current Sensor permissions follow the same asset-management policy.
+
+Operators can therefore monitor machines and sensors but cannot modify industrial asset configuration.
+
+This behavior was verified using the development Operator account.
+
+Tests:
+
+`GET /machines → 200 OK`
+
+`GET /sensors → 200 OK`
+
+`POST /machines → 403 Forbidden`
+
+`DELETE /sensors/{sensor_id} → 403 Forbidden`
+
+---
+
+## 64. SensorReading RBAC
+
+RBAC has been applied to:
+
+`backend/app/api/sensor_readings.py`
+
+Sensor readings can be viewed by all authenticated FactoryPulse roles.
+
+Reading creation is allowed for:
+
+- admin
+- technician
+- operator
+
+Managers currently have read-only access to sensor measurements.
+
+Current behavior:
+
+`GET /sensor-readings`
+
+All authenticated roles.
+
+`GET /sensor-readings/{reading_id}`
+
+All authenticated roles.
+
+`GET /sensors/{sensor_id}/readings`
+
+All authenticated roles.
+
+`POST /sensor-readings`
+
+Admin, Technician, Operator.
+
+This reflects the current design where Operators and technical systems may submit industrial measurements.
+
+---
+
+## 65. Prediction RBAC
+
+RBAC has been applied to:
+
+`backend/app/api/predictions.py`
+
+Prediction data can be viewed by all authenticated roles.
+
+Manual creation of Prediction records is currently restricted to:
+
+- admin
+- technician
+
+Current behavior:
+
+`GET /predictions`
+
+All authenticated roles.
+
+`GET /predictions/{prediction_id}`
+
+All authenticated roles.
+
+`GET /sensors/{sensor_id}/predictions`
+
+All authenticated roles.
+
+`POST /predictions`
+
+Admin and Technician.
+
+Manual prediction creation is temporary.
+
+Once the automated AI inference engine is implemented, prediction records will primarily be generated internally by FactoryPulse rather than manually by users.
+
+Operator testing confirmed:
+
+`GET prediction data → allowed`
+
+`POST /predictions → 403 Forbidden`
+
+---
+
+## 66. Alert RBAC
+
+RBAC has been applied to:
+
+`backend/app/api/alerts.py`
+
+Alert data can be viewed by all authenticated roles.
+
+Manual alert creation is restricted to:
+
+- admin
+- technician
+
+Alert updates are currently available to all authenticated roles.
+
+This allows operational users to perform actions such as:
+
+`open → acknowledged`
+
+Current behavior:
+
+`GET /alerts`
+
+All authenticated roles.
+
+`GET /alerts/{alert_id}`
+
+All authenticated roles.
+
+`GET /sensors/{sensor_id}/alerts`
+
+All authenticated roles.
+
+`POST /alerts`
+
+Admin and Technician.
+
+`PATCH /alerts/{alert_id}`
+
+All authenticated roles.
+
+Operator testing confirmed:
+
+`GET /alerts → 200 OK`
+
+`POST /alerts → 403 Forbidden`
+
+---
+
+## 67. MaintenanceRecord RBAC
+
+RBAC has been applied to:
+
+`backend/app/api/maintenance_records.py`
+
+Maintenance history can be viewed by all authenticated roles.
+
+Maintenance creation and modification are restricted to:
+
+- admin
+- technician
+
+Current behavior:
+
+`GET /maintenance-records`
+
+All authenticated roles.
+
+`GET /maintenance-records/{record_id}`
+
+All authenticated roles.
+
+`GET /machines/{machine_id}/maintenance-records`
+
+All authenticated roles.
+
+`POST /maintenance-records`
+
+Admin and Technician.
+
+`PATCH /maintenance-records/{record_id}`
+
+Admin and Technician.
+
+Operator testing confirmed:
+
+`POST /maintenance-records → 403 Forbidden`
+
+This prevents Operators and Managers from directly recording technical maintenance interventions under the current policy.
+
+---
+
+## 68. Notification Ownership Authorization
+
+Notifications use both:
+
+- Role-Based Access Control
+- Resource ownership authorization
+
+The Notification API is implemented in:
+
+`backend/app/api/notifications.py`
+
+Global notification administration is restricted to:
+
+- admin
+- manager
+
+Current global operations:
+
+`GET /notifications`
+
+Admin and Manager.
+
+`POST /notifications`
+
+Admin and Manager.
+
+Individual notification access is more flexible.
+
+All authenticated users may access a notification only when:
+
+`notification.user_id == current_user.id`
+
+unless the current user is Admin or Manager.
+
+Similarly:
+
+`GET /users/{user_id}/notifications`
+
+allows a normal user to retrieve only their own notification collection.
+
+Admin and Manager may access another user's notifications.
+
+Notification updates follow the same ownership rule.
+
+A helper function was added to:
+
+`backend/app/api/dependencies.py`
+
+called:
+
+`user_has_any_role()`
+
+Unlike `require_roles()`, this helper does not automatically reject the request.
+
+Instead, it returns a Boolean value so endpoint logic can combine role checks with ownership rules.
+
+The authorization logic can therefore express:
+
+`Resource belongs to current user`
+
+OR
+
+`Current user has privileged management role`
+
+This prevents users from accessing or modifying another user's private notification records.
+
+Operator integration tests confirmed:
+
+`GET /users/1/notifications → 200 OK`
+
+when User #1 accessed their own notifications.
+
+The same Operator received:
+
+`GET /notifications → 403 Forbidden`
+
+because global notification access requires Admin or Manager permissions.
+
+---
+
+## 69. First Operational RBAC Pass Complete
+
+The first RBAC pass now protects the existing FactoryPulse operational APIs.
+
+FactoryPulse currently enforces authorization across:
+
+- Machines
+- Sensors
+- SensorReadings
+- Predictions
+- Alerts
+- MaintenanceRecords
+- Notifications
+
+The security flow is now:
+
+`Client Request`
+
+`↓`
+
+`Bearer JWT`
+
+`↓`
+
+`get_current_user()`
+
+`↓`
+
+`Authenticated User`
+
+`↓`
+
+`Role loaded from PostgreSQL`
+
+`↓`
+
+`require_roles()`
+
+`↓`
+
+`Optional ownership validation`
+
+`↓`
+
+`Authorized API operation`
+
+The platform can now answer three separate security questions:
+
+`Who are you?`
+
+JWT authentication.
+
+`What are you allowed to do?`
+
+Role-Based Access Control.
+
+`Are you allowed to access this specific user's resource?`
+
+Ownership authorization.
+
+The next major milestone is:
+
+**Implement real User and Role administration APIs so authorized administrators can create users, assign roles, activate/deactivate accounts, and manage FactoryPulse access without directly editing PostgreSQL.**
+

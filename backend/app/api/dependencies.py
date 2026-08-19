@@ -88,3 +88,24 @@ def require_roles(
         return current_user
 
     return role_checker
+
+
+async def user_has_any_role(
+    db: AsyncSession,
+    user: User,
+    *roles: RoleName,
+) -> bool:
+    if user.role_id is None:
+        return False
+
+    role = await get_role_by_id(db, user.role_id)
+
+    if role is None:
+        return False
+
+    allowed_role_names = {
+        allowed_role.value
+        for allowed_role in roles
+    }
+
+    return role.name in allowed_role_names

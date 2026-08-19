@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_roles
+from app.core.rbac import ALL_ROLES, READING_WRITE_ROLES
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.sensor_reading import SensorReadingCreate, SensorReadingResponse
 from app.services.sensor_reading_service import (
     create_sensor_reading,
@@ -25,6 +28,7 @@ router = APIRouter(
 async def create_sensor_reading_endpoint(
     reading_data: SensorReadingCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*READING_WRITE_ROLES)),
 ) -> SensorReadingResponse:
     sensor = await get_sensor_by_id(db, reading_data.sensor_id)
 
@@ -43,6 +47,7 @@ async def create_sensor_reading_endpoint(
 )
 async def get_sensor_readings_endpoint(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[SensorReadingResponse]:
     return await get_sensor_readings(db)
 
@@ -54,6 +59,7 @@ async def get_sensor_readings_endpoint(
 async def get_sensor_reading_endpoint(
     reading_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> SensorReadingResponse:
     reading = await get_sensor_reading_by_id(db, reading_id)
 
@@ -73,6 +79,7 @@ async def get_sensor_reading_endpoint(
 async def get_sensor_readings_by_sensor_endpoint(
     sensor_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[SensorReadingResponse]:
     sensor = await get_sensor_by_id(db, sensor_id)
 

@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import require_roles
+from app.core.rbac import ALL_ROLES, TECHNICAL_WRITE_ROLES
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.alert import AlertCreate, AlertResponse, AlertUpdate
 from app.services.alert_service import (
     create_alert,
@@ -27,6 +30,7 @@ router = APIRouter(
 async def create_alert_endpoint(
     alert_data: AlertCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*TECHNICAL_WRITE_ROLES)),
 ) -> AlertResponse:
     sensor = await get_sensor_by_id(db, alert_data.sensor_id)
 
@@ -63,6 +67,7 @@ async def create_alert_endpoint(
 )
 async def get_alerts_endpoint(
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[AlertResponse]:
     return await get_alerts(db)
 
@@ -74,6 +79,7 @@ async def get_alerts_endpoint(
 async def get_alert_endpoint(
     alert_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> AlertResponse:
     alert = await get_alert_by_id(db, alert_id)
 
@@ -93,6 +99,7 @@ async def get_alert_endpoint(
 async def get_sensor_alerts_endpoint(
     sensor_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> list[AlertResponse]:
     sensor = await get_sensor_by_id(db, sensor_id)
 
@@ -113,6 +120,7 @@ async def update_alert_endpoint(
     alert_id: int,
     alert_data: AlertUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> AlertResponse:
     alert = await get_alert_by_id(db, alert_id)
 
