@@ -6,8 +6,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
-class Machine(Base):
-    __tablename__ = "machines"
+class ProductionLine(Base):
+    __tablename__ = "production_lines"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
@@ -16,13 +16,8 @@ class Machine(Base):
         nullable=False,
     )
 
-    production_line_id: Mapped[int | None] = mapped_column(
-        ForeignKey("production_lines.id"),
-        nullable=True,
-    )
-
     name: Mapped[str] = mapped_column(
-        String(120),
+        String(150),
         nullable=False,
     )
 
@@ -32,15 +27,9 @@ class Machine(Base):
         nullable=False,
     )
 
-    location: Mapped[str | None] = mapped_column(
-        String(150),
+    description: Mapped[str | None] = mapped_column(
+        String(255),
         nullable=True,
-    )
-
-    status: Mapped[str] = mapped_column(
-        String(30),
-        default="active",
-        nullable=False,
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -50,17 +39,9 @@ class Machine(Base):
     )
 
     area: Mapped["Area"] = relationship(
-        back_populates="machines"
+        back_populates="production_lines"
     )
 
-    production_line: Mapped["ProductionLine | None"] = relationship(
-        back_populates="machines"
-    )
-
-    sensors: Mapped[list["Sensor"]] = relationship(
-        back_populates="machine"
-    )
-
-    maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(
-        back_populates="machine"
+    machines: Mapped[list["Machine"]] = relationship(
+        back_populates="production_line"
     )

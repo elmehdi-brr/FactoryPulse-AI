@@ -7,6 +7,10 @@ from .role import Role
 from .sensor import Sensor
 from .sensor_reading import SensorReading
 from .user import User
+from .organization import Organization
+from .site import Site
+from .area import Area
+from .production_line import ProductionLine
 
 __all__ = [
     "Alert",
@@ -18,4 +22,8 @@ __all__ = [
     "Sensor",
     "SensorReading",
     "User",
+    "Organization",
+    "Site",
+    "Area",
+    "ProductionLine",
 ]
