@@ -10,6 +10,8 @@ from app.schemas.site import (
     SiteResponse,
     SiteUpdate,
 )
+from app.schemas.area import AreaResponse
+from app.services.area_service import get_areas_by_site
 from app.services.organization_service import get_organization_by_id
 from app.services.site_service import (
     create_site,
@@ -150,4 +152,29 @@ async def update_site_endpoint(
         db,
         site,
         site_data,
+    )
+
+@router.get(
+    "/{site_id}/areas",
+    response_model=list[AreaResponse],
+)
+async def get_site_areas_endpoint(
+    site_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
+) -> list[AreaResponse]:
+    site = await get_site_by_id(
+        db,
+        site_id,
+    )
+
+    if site is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Site not found",
+        )
+
+    return await get_areas_by_site(
+        db,
+        site_id,
     )

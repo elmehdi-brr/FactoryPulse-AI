@@ -10,6 +10,8 @@ from app.schemas.area import (
     AreaResponse,
     AreaUpdate,
 )
+from app.schemas.machine import MachineResponse
+from app.schemas.production_line import ProductionLineResponse
 from app.services.area_service import (
     create_area,
     get_area_by_code,
@@ -18,6 +20,8 @@ from app.services.area_service import (
     update_area,
 )
 from app.services.site_service import get_site_by_id
+from app.services.machine_service import get_machines_by_area
+from app.services.production_line_service import get_production_lines_by_area
 
 
 router = APIRouter(
@@ -150,4 +154,55 @@ async def update_area_endpoint(
         db,
         area,
         area_data,
+    )
+
+@router.get(
+    "/{area_id}/production-lines",
+    response_model=list[ProductionLineResponse],
+)
+async def get_area_production_lines_endpoint(
+    area_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
+) -> list[ProductionLineResponse]:
+    area = await get_area_by_id(
+        db,
+        area_id,
+    )
+
+    if area is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Area not found",
+        )
+
+    return await get_production_lines_by_area(
+        db,
+        area_id,
+    )
+
+
+@router.get(
+    "/{area_id}/machines",
+    response_model=list[MachineResponse],
+)
+async def get_area_machines_endpoint(
+    area_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
+) -> list[MachineResponse]:
+    area = await get_area_by_id(
+        db,
+        area_id,
+    )
+
+    if area is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Area not found",
+        )
+
+    return await get_machines_by_area(
+        db,
+        area_id,
     )

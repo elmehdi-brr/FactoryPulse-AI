@@ -38,6 +38,33 @@ async def get_machines(
 
     return list(result.scalars().all())
 
+async def get_machines_by_area(
+    db: AsyncSession,
+    area_id: int,
+) -> list[Machine]:
+    result = await db.execute(
+        select(Machine)
+        .where(Machine.area_id == area_id)
+        .order_by(Machine.id)
+    )
+
+    return list(result.scalars().all())
+
+
+async def get_machines_by_production_line(
+    db: AsyncSession,
+    production_line_id: int,
+) -> list[Machine]:
+    result = await db.execute(
+        select(Machine)
+        .where(
+            Machine.production_line_id == production_line_id
+        )
+        .order_by(Machine.id)
+    )
+
+    return list(result.scalars().all())
+
 
 async def update_machine(
     db: AsyncSession,

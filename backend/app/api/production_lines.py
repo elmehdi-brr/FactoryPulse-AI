@@ -10,6 +10,7 @@ from app.schemas.production_line import (
     ProductionLineResponse,
     ProductionLineUpdate,
 )
+from app.schemas.machine import MachineResponse
 from app.services.area_service import get_area_by_id
 from app.services.production_line_service import (
     create_production_line,
@@ -18,6 +19,7 @@ from app.services.production_line_service import (
     get_production_lines,
     update_production_line,
 )
+from app.services.machine_service import get_machines_by_production_line
 
 
 router = APIRouter(
@@ -151,3 +153,29 @@ async def update_production_line_endpoint(
         production_line,
         line_data,
     )
+
+
+@router.get(
+    "/{production_line_id}/machines",
+    response_model=list[MachineResponse],
+)
+async def get_production_line_machines_endpoint(
+    production_line_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
+) -> list[MachineResponse]:
+    production_line = await get_production_line_by_id(
+        db,
+        production_line_id,
+    )
+
+    if production_line is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Production line not found",
+        )
+
+    return await get_machines_by_production_line(
+        db,
+        production_line_id,
+    ) 
