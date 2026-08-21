@@ -14,6 +14,8 @@ from app.api.sensors import router as sensors_router
 from app.api.sites import router as sites_router
 from app.api.users import router as users_router
 from app.core.config import settings
+from app.api.areas import router as areas_router
+from app.api.production_lines import router as production_lines_router
 
 
 app = FastAPI(title=settings.app_name)
@@ -23,6 +25,8 @@ app.include_router(auth_router)
 
 app.include_router(organizations_router)
 app.include_router(sites_router)
+app.include_router(areas_router)
+app.include_router(production_lines_router)
 
 app.include_router(machines_router)
 app.include_router(sensors_router)
