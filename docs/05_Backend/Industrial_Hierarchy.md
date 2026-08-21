@@ -682,3 +682,232 @@ Next milestone:
 
 **Implement Pydantic schemas, services, REST APIs, and RBAC for Organization, Site, Area, and ProductionLine.**
 
+
+---
+
+## Machine Hierarchy API Integration
+
+The existing Machine API was integrated with the industrial hierarchy.
+
+The Machine schema now reflects the final hierarchy rules:
+
+`area_id = required`
+
+`production_line_id = optional`
+
+This allows FactoryPulse to support both production-line assets and standalone industrial assets.
+
+Examples:
+
+Production asset:
+
+`Area → ProductionLine → Machine`
+
+Standalone utility asset:
+
+`Area → Machine`
+
+---
+
+## Machine Hierarchy Validation
+
+Reusable hierarchy validation was added to:
+
+`backend/app/api/machines.py`
+
+Before a Machine can be created or its hierarchy changed, FactoryPulse validates:
+
+1. The selected Area exists.
+2. If no Production Line is provided, the Machine may belong directly to the Area.
+3. If a Production Line is provided, the Production Line must exist.
+4. The Production Line must belong to the same Area selected for the Machine.
+
+This prevents inconsistent hierarchy relationships.
+
+For example:
+
+`Production Area → Production Line 1`
+
+A Machine configured as:
+
+`area_id = Production Area`
+
+`production_line_id = Production Line 1`
+
+is valid.
+
+However, using:
+
+`area_id = Utilities Area`
+
+with:
+
+`production_line_id = Production Line 1`
+
+is rejected because Production Line 1 belongs to Production Area.
+
+The API returns:
+
+`400 Bad Request`
+
+with:
+
+`Production line does not belong to the selected area`
+
+---
+
+## Machine Creation Validation
+
+Machine creation was tested through the REST API.
+
+### Invalid Area
+
+A Machine using a nonexistent Area was rejected with:
+
+`404 Not Found`
+
+`Area not found`
+
+### Invalid Production Line
+
+A Machine using a valid Area but a nonexistent Production Line was rejected with:
+
+`404 Not Found`
+
+`Production line not found`
+
+### Cross-Area Production Line
+
+A Machine using an Area together with a Production Line belonging to another Area was rejected with:
+
+`400 Bad Request`
+
+This confirms that FactoryPulse prevents cross-hierarchy asset relationships.
+
+---
+
+## Standalone Utility Machine
+
+A second development Area was created:
+
+`Utilities Area`
+
+This Area represents utility and infrastructure equipment such as:
+
+- air compressors
+- pumps
+- HVAC systems
+- electrical infrastructure
+- other standalone industrial assets
+
+A development Machine was successfully created:
+
+`Air Compressor 01`
+
+with:
+
+`production_line_id = null`
+
+The resulting structure is:
+
+Tangier Factory
+
+↓
+
+Utilities Area
+
+↓
+
+Air Compressor 01
+
+This confirms that FactoryPulse does not require utility or standalone equipment to belong to an artificial Production Line.
+
+---
+
+## Machine PATCH Hierarchy Validation
+
+Hierarchy validation is also applied to partial Machine updates.
+
+For PATCH requests, FactoryPulse calculates the Machine's final hierarchy using:
+
+- values supplied in the PATCH request
+- existing Machine values for fields that were not supplied
+
+The final combination is then validated before any database update is performed.
+
+Example:
+
+Existing Machine:
+
+`Production Area → Production Line 1 → Industrial Motor 01`
+
+Attempted PATCH:
+
+`area_id = Utilities Area`
+
+while leaving the existing Production Line unchanged.
+
+The resulting combination would have been:
+
+`Utilities Area + Production Line 1`
+
+Because Production Line 1 belongs to Production Area, the update was rejected with:
+
+`400 Bad Request`
+
+The Machine remained unchanged after the rejected request.
+
+This prevents partial updates from silently creating inconsistent hierarchy relationships.
+
+---
+
+## Current Industrial Hierarchy
+
+The development hierarchy now demonstrates both supported asset structures:
+
+FactoryPulse Demo Industries
+
+↓
+
+Tangier Factory
+
+├── Production Area
+
+│   └── Production Line 1
+
+│       └── Industrial Motor 01
+
+│
+
+└── Utilities Area
+
+    └── Air Compressor 01
+
+This demonstrates the flexible FactoryPulse hierarchy:
+
+`Organization → Site → Area → ProductionLine → Machine`
+
+or:
+
+`Organization → Site → Area → Machine`
+
+---
+
+## Machine Hierarchy Integration Status
+
+Completed:
+
+- Machine `area_id` required at database level
+- Machine `production_line_id` optional
+- Machine Pydantic schemas updated
+- Area existence validation
+- Production Line existence validation
+- Area/Production Line consistency validation
+- Machine CREATE hierarchy validation
+- Machine PATCH hierarchy validation
+- Standalone Area-to-Machine support
+- Invalid hierarchy relationships rejected
+- Existing hierarchy relationships preserved during failed updates
+- Swagger integration tests completed successfully
+
+The core Machine-to-industrial-hierarchy integration is now complete.

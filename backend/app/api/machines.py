@@ -6,6 +6,7 @@ from app.core.rbac import ALL_ROLES, ASSET_WRITE_ROLES, MANAGEMENT_ROLES
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.machine import MachineCreate, MachineResponse, MachineUpdate
+from app.services.area_service import get_area_by_id
 from app.services.machine_service import (
     create_machine,
     delete_machine,
@@ -13,12 +14,50 @@ from app.services.machine_service import (
     get_machines,
     update_machine,
 )
+from app.services.production_line_service import get_production_line_by_id
 
 
 router = APIRouter(
     prefix="/machines",
     tags=["Machines"],
 )
+
+
+async def validate_machine_hierarchy(
+    db: AsyncSession,
+    area_id: int,
+    production_line_id: int | None,
+) -> None:
+    area = await get_area_by_id(
+        db,
+        area_id,
+    )
+
+    if area is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Area not found",
+        )
+
+    if production_line_id is None:
+        return
+
+    production_line = await get_production_line_by_id(
+        db,
+        production_line_id,
+    )
+
+    if production_line is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Production line not found",
+        )
+
+    if production_line.area_id != area_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Production line does not belong to the selected area",
+        )
 
 
 @router.post(
@@ -31,7 +70,16 @@ async def create_machine_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*ASSET_WRITE_ROLES)),
 ) -> MachineResponse:
-    return await create_machine(db, machine_data)
+    await validate_machine_hierarchy(
+        db,
+        machine_data.area_id,
+        machine_data.production_line_id,
+    )
+
+    return await create_machine(
+        db,
+        machine_data,
+    )
 
 
 @router.get(
@@ -54,7 +102,10 @@ async def get_machine_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*ALL_ROLES)),
 ) -> MachineResponse:
-    machine = await get_machine_by_id(db, machine_id)
+    machine = await get_machine_by_id(
+        db,
+        machine_id,
+    )
 
     if machine is None:
         raise HTTPException(
@@ -75,7 +126,10 @@ async def update_machine_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*ASSET_WRITE_ROLES)),
 ) -> MachineResponse:
-    machine = await get_machine_by_id(db, machine_id)
+    machine = await get_machine_by_id(
+        db,
+        machine_id,
+    )
 
     if machine is None:
         raise HTTPException(
@@ -83,7 +137,31 @@ async def update_machine_endpoint(
             detail="Machine not found",
         )
 
-    return await update_machine(db, machine, machine_data)
+    update_data = machine_data.model_dump(
+        exclude_unset=True
+    )
+
+    final_area_id = update_data.get(
+        "area_id",
+        machine.area_id,
+    )
+
+    final_production_line_id = update_data.get(
+        "production_line_id",
+        machine.production_line_id,
+    )
+
+    await validate_machine_hierarchy(
+        db,
+        final_area_id,
+        final_production_line_id,
+    )
+
+    return await update_machine(
+        db,
+        machine,
+        machine_data,
+    )
 
 
 @router.delete(
@@ -95,7 +173,10 @@ async def delete_machine_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*MANAGEMENT_ROLES)),
 ) -> None:
-    machine = await get_machine_by_id(db, machine_id)
+    machine = await get_machine_by_id(
+        db,
+        machine_id,
+    )
 
     if machine is None:
         raise HTTPException(
@@ -103,4 +184,7 @@ async def delete_machine_endpoint(
             detail="Machine not found",
         )
 
-    await delete_machine(db, machine)
+    await delete_machine(
+        db,
+        machine,
+    )
