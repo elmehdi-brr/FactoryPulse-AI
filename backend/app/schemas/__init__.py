@@ -5,6 +5,18 @@ from .maintenance_record import (
     MaintenanceRecordResponse,
     MaintenanceRecordUpdate,
 )
+from .area import AreaCreate, AreaResponse, AreaUpdate
+from .organization import (
+    OrganizationCreate,
+    OrganizationResponse,
+    OrganizationUpdate,
+)
+from .production_line import (
+    ProductionLineCreate,
+    ProductionLineResponse,
+    ProductionLineUpdate,
+)
+from .site import SiteCreate, SiteResponse, SiteUpdate
 from .notification import NotificationCreate, NotificationResponse, NotificationUpdate
 from .prediction import PredictionCreate, PredictionResponse
 from .role import RoleCreate, RoleResponse, RoleUpdate
@@ -40,4 +52,16 @@ __all__ = [
     "UserResponse",
     "UserUpdate",
     "TokenResponse",
+    "AreaCreate",
+    "AreaResponse",
+    "AreaUpdate",
+    "OrganizationCreate",
+    "OrganizationResponse",
+    "OrganizationUpdate",
+    "ProductionLineCreate",
+    "ProductionLineResponse",
+    "ProductionLineUpdate",
+    "SiteCreate",
+    "SiteResponse",
+    "SiteUpdate",
 ]

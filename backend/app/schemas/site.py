@@ -3,29 +3,27 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 
-class MachineBase(BaseModel):
-    area_id: int
-    production_line_id: int | None = None
+class SiteBase(BaseModel):
+    organization_id: int
     name: str
     code: str
     location: str | None = None
-    status: str = "active"
+    description: str | None = None
 
 
-class MachineCreate(MachineBase):
+class SiteCreate(SiteBase):
     pass
 
 
-class MachineUpdate(BaseModel):
-    area_id: int | None = None
-    production_line_id: int | None = None
+class SiteUpdate(BaseModel):
+    organization_id: int | None = None
     name: str | None = None
     code: str | None = None
     location: str | None = None
-    status: str | None = None
+    description: str | None = None
 
 
-class MachineResponse(MachineBase):
+class SiteResponse(SiteBase):
     id: int
     created_at: datetime
 
