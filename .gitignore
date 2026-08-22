@@ -5,3 +5,4 @@ backend/.venv/
 __pycache__/
 *.py[cod]
 backend/.env
+backend/.env.test

@@ -1,0 +1,115 @@
+import os
+from pathlib import Path
+
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+# This MUST happen before FactoryPulse modules are imported.
+os.environ["FACTORYPULSE_ENV_FILE"] = str(
+    BACKEND_DIR / ".env.test"
+)
+
+
+import app.models  # noqa: E402, F401
+from app.core.security import create_access_token, hash_password  # noqa: E402
+from app.db.base import Base  # noqa: E402
+from app.db.session import AsyncSessionLocal, engine  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.role import Role  # noqa: E402
+from app.models.user import User  # noqa: E402
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def reset_test_database():
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
+        await connection.run_sync(Base.metadata.create_all)
+
+    yield
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
+
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client() -> AsyncClient:
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as test_client:
+        yield test_client
+
+
+@pytest_asyncio.fixture
+async def auth_headers() -> dict[str, dict[str, str]]:
+    async with AsyncSessionLocal() as db:
+        admin_role = Role(
+            name="admin",
+            description="Test administrator",
+        )
+
+        operator_role = Role(
+            name="operator",
+            description="Test operator",
+        )
+
+        db.add_all([
+            admin_role,
+            operator_role,
+        ])
+
+        await db.flush()
+
+        admin_user = User(
+            email="admin@test.factorypulse.local",
+            full_name="Test Administrator",
+            hashed_password=hash_password(
+                "test-admin-password"
+            ),
+            role_id=admin_role.id,
+            is_active=True,
+        )
+
+        operator_user = User(
+            email="operator@test.factorypulse.local",
+            full_name="Test Operator",
+            hashed_password=hash_password(
+                "test-operator-password"
+            ),
+            role_id=operator_role.id,
+            is_active=True,
+        )
+
+        db.add_all([
+            admin_user,
+            operator_user,
+        ])
+
+        await db.commit()
+
+        await db.refresh(admin_user)
+        await db.refresh(operator_user)
+
+        admin_token = create_access_token(
+            subject=str(admin_user.id)
+        )
+
+        operator_token = create_access_token(
+            subject=str(operator_user.id)
+        )
+
+    return {
+        "admin": {
+            "Authorization": f"Bearer {admin_token}"
+        },
+        "operator": {
+            "Authorization": f"Bearer {operator_token}"
+        },
+    }
