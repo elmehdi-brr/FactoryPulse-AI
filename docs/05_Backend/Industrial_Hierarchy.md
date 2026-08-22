@@ -911,3 +911,115 @@ Completed:
 - Swagger integration tests completed successfully
 
 The core Machine-to-industrial-hierarchy integration is now complete.
+
+
+
+---
+
+## Industrial Hierarchy Database Indexes
+
+The FactoryPulse industrial hierarchy was reviewed for database query performance.
+
+PostgreSQL automatically creates indexes for primary keys and unique constraints, but foreign-key columns are not automatically indexed.
+
+The FactoryPulse hierarchy frequently performs queries such as:
+
+`Organization → Sites`
+
+`Site → Areas`
+
+`Area → Production Lines`
+
+`Area → Machines`
+
+`Production Line → Machines`
+
+These queries filter using hierarchy foreign-key columns, so explicit indexes were added.
+
+The indexed hierarchy columns are:
+
+- `sites.organization_id`
+- `areas.site_id`
+- `production_lines.area_id`
+- `machines.area_id`
+- `machines.production_line_id`
+
+The SQLAlchemy ORM models were updated using:
+
+`index=True`
+
+on these foreign-key columns.
+
+---
+
+## Hierarchy Index Migration
+
+An Alembic migration was generated:
+
+`add hierarchy foreign key indexes`
+
+Migration revision:
+
+`0b543b737a18`
+
+Previous revision:
+
+`85c9a83351b5`
+
+The migration creates:
+
+- `ix_sites_organization_id`
+- `ix_areas_site_id`
+- `ix_production_lines_area_id`
+- `ix_machines_area_id`
+- `ix_machines_production_line_id`
+
+The migration was inspected before being applied.
+
+No unrelated tables, columns, constraints, or schema changes were included.
+
+The migration was successfully applied with:
+
+`alembic upgrade head`
+
+Alembic was then verified at:
+
+`0b543b737a18 (head)`
+
+---
+
+## PostgreSQL Index Verification
+
+The hierarchy indexes were verified directly through PostgreSQL.
+
+The database confirmed the following indexes:
+
+`areas.site_id → ix_areas_site_id`
+
+`machines.area_id → ix_machines_area_id`
+
+`machines.production_line_id → ix_machines_production_line_id`
+
+`production_lines.area_id → ix_production_lines_area_id`
+
+`sites.organization_id → ix_sites_organization_id`
+
+All five hierarchy foreign-key indexes are active.
+
+These indexes prepare the hierarchy navigation layer for larger industrial datasets and improve the database access paths used by the FactoryPulse API.
+
+---
+
+## Hierarchy Performance Status
+
+Completed:
+
+- Hierarchy foreign-key query paths reviewed
+- Missing foreign-key indexes identified
+- SQLAlchemy metadata updated
+- Alembic migration generated and inspected
+- Five hierarchy indexes created
+- PostgreSQL index verification completed
+- Alembic head verified
+
+The FactoryPulse industrial hierarchy database is now structurally indexed for its primary navigation queries.

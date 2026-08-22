@@ -14,6 +14,7 @@ class ProductionLine(Base):
     area_id: Mapped[int] = mapped_column(
         ForeignKey("areas.id"),
         nullable=False,
+        index=True,
     )
 
     name: Mapped[str] = mapped_column(

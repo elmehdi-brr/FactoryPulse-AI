@@ -14,6 +14,7 @@ class Site(Base):
     organization_id: Mapped[int] = mapped_column(
         ForeignKey("organizations.id"),
         nullable=False,
+        index=True,
     )
 
     name: Mapped[str] = mapped_column(
