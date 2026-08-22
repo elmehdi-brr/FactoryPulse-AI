@@ -14,11 +14,13 @@ class Machine(Base):
     area_id: Mapped[int] = mapped_column(
         ForeignKey("areas.id"),
         nullable=False,
+        index=True,
     )
 
     production_line_id: Mapped[int | None] = mapped_column(
         ForeignKey("production_lines.id"),
         nullable=True,
+        index=True,
     )
 
     name: Mapped[str] = mapped_column(

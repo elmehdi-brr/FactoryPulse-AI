@@ -14,6 +14,7 @@ class Area(Base):
     site_id: Mapped[int] = mapped_column(
         ForeignKey("sites.id"),
         nullable=False,
+        index=True,
     )
 
     name: Mapped[str] = mapped_column(
