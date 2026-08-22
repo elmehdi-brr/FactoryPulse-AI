@@ -15,6 +15,11 @@ class Prediction(Base):
         ForeignKey("sensors.id"),
         nullable=False,
     )
+    source_reading_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sensor_readings.id"),
+        nullable=True,
+        index=True,
+    )
 
     predicted_value: Mapped[float] = mapped_column(Float, nullable=False)
 
@@ -41,3 +46,4 @@ class Prediction(Base):
 
     sensor: Mapped["Sensor"] = relationship(back_populates="predictions")
     alerts: Mapped[list["Alert"]] = relationship(back_populates="prediction")
+    source_reading: Mapped["SensorReading | None"] = relationship(back_populates="predictions")

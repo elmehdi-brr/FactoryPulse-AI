@@ -22,3 +22,4 @@ class SensorReading(Base):
     )
 
     sensor: Mapped["Sensor"] = relationship(back_populates="readings")
+    predictions: Mapped[list["Prediction"]] = relationship(back_populates="source_reading")

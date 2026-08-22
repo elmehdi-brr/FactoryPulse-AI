@@ -5,12 +5,12 @@ from pydantic import BaseModel, ConfigDict
 
 class PredictionBase(BaseModel):
     sensor_id: int
+    source_reading_id: int | None = None
     predicted_value: float
     anomaly_score: float | None = None
     is_anomaly: bool = False
     model_name: str
     model_version: str | None = None
-
 
 class PredictionCreate(PredictionBase):
     pass
