@@ -6,6 +6,9 @@ from app.models.prediction import Prediction
 from app.models.sensor_reading import SensorReading
 from app.schemas.alert import AlertCreate
 from app.services.alert_service import create_alert
+from app.services.notification_automation_service import (
+    create_notifications_for_alert,
+)
 
 
 DEFAULT_RISK_EVALUATOR = AnomalyRiskEvaluator(
@@ -50,7 +53,14 @@ async def create_alert_for_prediction(
         status="open",
     )
 
-    return await create_alert(
+    alert = await create_alert(
         db,
         alert_data,
     )
+
+    await create_notifications_for_alert(
+        db,
+        alert,
+    )
+
+    return alert

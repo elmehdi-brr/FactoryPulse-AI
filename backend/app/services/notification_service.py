@@ -66,3 +66,38 @@ async def update_notification(
     await db.refresh(notification)
 
     return notification
+
+
+async def get_notified_user_ids_for_alert(
+    db: AsyncSession,
+    alert_id: int,
+) -> set[int]:
+    result = await db.execute(
+        select(Notification.user_id).where(
+            Notification.alert_id == alert_id
+        )
+    )
+
+    return set(result.scalars().all())
+
+
+async def create_notifications(
+    db: AsyncSession,
+    notifications_data: list[NotificationCreate],
+) -> list[Notification]:
+    if not notifications_data:
+        return []
+
+    notifications = [
+        Notification(**notification_data.model_dump())
+        for notification_data in notifications_data
+    ]
+
+    db.add_all(notifications)
+
+    await db.commit()
+
+    for notification in notifications:
+        await db.refresh(notification)
+
+    return notifications

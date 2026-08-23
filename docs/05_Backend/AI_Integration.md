@@ -1465,3 +1465,396 @@ Alert
 Notification
 
 Before implementing that layer, the current automatic Alert milestone will be committed and pushed as an independent checkpoint.
+
+---
+
+## Automatic AI Alert Notifications
+
+FactoryPulse now automatically creates in-app Notifications for relevant users when AI anomaly detection generates an Alert.
+
+The complete automated intelligence pipeline is now:
+
+SensorReading
+
+↓
+
+Historical Sensor Data
+
+↓
+
+AI Inference
+
+↓
+
+Prediction
+
+↓
+
+Risk Evaluation
+
+↓
+
+Alert
+
+↓
+
+Notification Policy
+
+↓
+
+Notification
+
+No manual Prediction, Alert, or Notification creation is required during the normal automated workflow.
+
+---
+
+## Notification Recipient Policy
+
+The first FactoryPulse automatic notification policy is role-based.
+
+Automatically generated AI Alerts notify active users with the following roles:
+
+- Admin
+- Manager
+- Technician
+
+Operators are not automatically notified of every AI anomaly.
+
+Inactive users are excluded.
+
+The current policy is intentionally temporary and role-based because FactoryPulse does not yet contain responsibility assignments such as:
+
+- User → Site
+- User → Area
+- User → Production Line
+- User → Machine
+
+Future versions can evolve toward targeted notifications based on industrial responsibility.
+
+For example:
+
+Alert
+
+↓
+
+Machine
+
+↓
+
+Area / Site
+
+↓
+
+Responsible users
+
+↓
+
+Notification
+
+without changing the existing Alert or Notification persistence architecture.
+
+---
+
+## Eligible User Lookup
+
+The User service now supports:
+
+`get_active_users_by_roles()`
+
+The function retrieves users whose:
+
+- account is active
+- Role belongs to the requested role list
+
+The automatic AI notification policy currently requests:
+
+`admin`
+
+`manager`
+
+`technician`
+
+This avoids hardcoding specific user IDs into the automation workflow.
+
+---
+
+## Batch Notification Persistence
+
+The Notification service now supports:
+
+`create_notifications()`
+
+Multiple Notifications can therefore be persisted together using a single database commit.
+
+This is more efficient than committing each recipient Notification independently.
+
+The Notification service also supports:
+
+`get_notified_user_ids_for_alert()`
+
+which is used to determine which users have already received a Notification for a specific Alert.
+
+---
+
+## Notification Automation Service
+
+Implemented in:
+
+`backend/app/services/notification_automation_service.py`
+
+The main function is:
+
+`create_notifications_for_alert()`
+
+Workflow:
+
+Alert
+
+↓
+
+Find eligible active users
+
+↓
+
+Find users already notified for the Alert
+
+↓
+
+Exclude duplicate recipients
+
+↓
+
+Create one in-app Notification per remaining user
+
+Automatically generated Notifications contain:
+
+- `user_id`
+- `alert_id`
+- `title`
+- `message`
+- `channel`
+- `is_read`
+
+Default channel:
+
+`in_app`
+
+Initial read state:
+
+`false`
+
+The Notification title includes Alert severity.
+
+Example:
+
+`[MEDIUM] AI anomaly detected`
+
+---
+
+## Notification Idempotency
+
+Notification generation is designed to be idempotent at the service level.
+
+If:
+
+`create_notifications_for_alert()`
+
+is called again for the same Alert, FactoryPulse checks which users have already been notified.
+
+Existing recipients are skipped.
+
+This prevents repeated processing of an Alert from generating duplicate in-app Notifications for the same user.
+
+---
+
+## Alert Automation Integration
+
+The automatic Alert service now performs:
+
+Prediction
+
+↓
+
+Risk Assessment
+
+↓
+
+Create Alert
+
+↓
+
+Create Notifications for eligible users
+
+Therefore:
+
+`create_alert_for_prediction()`
+
+does not stop after persisting the Alert.
+
+When an Alert is created successfully, FactoryPulse automatically invokes the Notification automation layer.
+
+Normal Predictions still generate:
+
+- no Alert
+- no Notification
+
+---
+
+## Notification Automation Tests
+
+Implemented in:
+
+`tests/test_notification_automation.py`
+
+The automated suite verifies:
+
+### Eligible Roles
+
+An automatically generated AI Alert creates Notifications for:
+
+- active Admin
+- active Manager
+- active Technician
+
+### Operator Exclusion
+
+An Operator does not automatically receive the AI Alert Notification.
+
+### Inactive User Exclusion
+
+An inactive user with an otherwise eligible role does not receive the Notification.
+
+### Idempotency
+
+Calling Notification generation again for the same Alert does not create duplicate Notifications.
+
+The number of Notifications remains unchanged.
+
+---
+
+## Test Authentication Expansion
+
+The shared automated test environment now includes all four standard FactoryPulse roles:
+
+- Admin
+- Manager
+- Technician
+- Operator
+
+This better reflects the production RBAC model and provides reusable authentication identities for future API and authorization tests.
+
+---
+
+## Current Automated Test Status
+
+Previous backend suite:
+
+`30 passed`
+
+Notification automation tests:
+
+`4 passed`
+
+Current total:
+
+`34 passed`
+
+All previous tests continue passing, including:
+
+- Industrial Hierarchy
+- RBAC
+- Prediction traceability
+- baseline anomaly inference
+- AI orchestration
+- automatic Prediction generation
+- automatic Alert generation
+- risk evaluation
+
+---
+
+## Manual Swagger Verification
+
+The complete Notification workflow was also verified manually through FastAPI Swagger.
+
+A fresh Sensor was created.
+
+Ten readings with:
+
+`value = 50`
+
+were submitted to establish the statistical baseline.
+
+An eleventh reading with:
+
+`value = 80`
+
+was then submitted.
+
+Only the SensorReading API was called manually.
+
+FactoryPulse automatically generated:
+
+1. SensorReading
+2. Prediction
+3. Alert
+4. Notification
+
+The generated Prediction was confirmed through:
+
+GET `/sensors/{sensor_id}/predictions`
+
+The generated Alert was confirmed through:
+
+GET `/sensors/{sensor_id}/alerts`
+
+The generated Notification was confirmed through:
+
+GET `/users/{user_id}/notifications`
+
+An eligible Admin user received the Notification.
+
+The Operator did not receive a Notification linked to the new AI Alert.
+
+This confirms that the automatic Notification policy works through the real API workflow as well as through automated tests.
+
+---
+
+## Complete Automated Intelligence Loop
+
+FactoryPulse currently supports:
+
+SensorReading
+
+↓
+
+Historical Sensor Data
+
+↓
+
+StatisticalZScoreEngine
+
+↓
+
+Prediction
+
+↓
+
+Anomaly Detection
+
+↓
+
+Risk Evaluation
+
+↓
+
+Alert
+
+↓
+
+Recipient Policy
+
+↓
+
+In-App Notifications
+
+This completes the first end-to-end automated operational intelligence loop in FactoryPulse AI.
