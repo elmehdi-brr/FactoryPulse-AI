@@ -375,3 +375,430 @@ Completed:
 Next milestone:
 
 **Implement the AI inference and orchestration foundation that automatically processes SensorReadings and produces Predictions.**
+
+
+
+---
+
+## AI Inference Engine Foundation
+
+FactoryPulse now includes a model-independent AI inference layer.
+
+Implemented package:
+
+`backend/app/ai/`
+
+Current structure:
+
+- `base.py`
+- `baseline.py`
+
+The purpose of this layer is to separate machine-learning inference from:
+
+- FastAPI routes
+- database persistence
+- operational CRUD services
+
+The architecture is:
+
+SensorReading
+
+↓
+
+AI Orchestration
+
+↓
+
+Inference Engine
+
+↓
+
+Inference Result
+
+↓
+
+Prediction
+
+This allows FactoryPulse to replace or extend inference models without rewriting the surrounding backend workflow.
+
+---
+
+## Inference Result
+
+The common inference result is represented by:
+
+`InferenceResult`
+
+It contains:
+
+- `predicted_value`
+- `anomaly_score`
+- `is_anomaly`
+- `model_name`
+- `model_version`
+
+All inference engines return this common structure.
+
+This creates a stable contract between AI models and the FactoryPulse backend.
+
+---
+
+## Inference Engine Interface
+
+FactoryPulse defines the:
+
+`InferenceEngine`
+
+protocol.
+
+An inference engine receives:
+
+- the current SensorReading value
+- historical values for the same Sensor
+
+and returns an:
+
+`InferenceResult`
+
+Future implementations may include:
+
+- Statistical anomaly detection
+- XGBoost
+- forecasting models
+- failure-risk models
+- deep-learning models
+- sensor-specific models
+- multi-sensor models
+
+The orchestration layer therefore depends on an interface rather than a specific machine-learning implementation.
+
+---
+
+## Statistical Z-Score Baseline
+
+The first inference implementation is:
+
+`StatisticalZScoreEngine`
+
+Model name:
+
+`statistical-zscore`
+
+Model version:
+
+`1.0`
+
+The engine uses recent SensorReading history to calculate:
+
+- historical mean
+- population standard deviation
+- absolute Z-score of the current reading
+
+Default configuration:
+
+`threshold = 3.0`
+
+`min_history = 10`
+
+A reading is classified as anomalous when:
+
+`anomaly_score >= threshold`
+
+This model is a deterministic baseline used to validate the complete AI automation architecture before integrating more advanced trained models.
+
+It is not intended to be the final FactoryPulse AI model.
+
+---
+
+## Insufficient History Behavior
+
+When no historical values exist, the engine:
+
+- uses the current value as the predicted value
+- does not calculate an anomaly score
+- does not classify the reading as anomalous
+
+When history exists but is below the configured minimum history requirement:
+
+- the historical mean becomes the predicted value
+- anomaly detection remains inactive
+- `anomaly_score = null`
+
+This prevents FactoryPulse from producing unreliable anomaly classifications when insufficient historical context exists.
+
+---
+
+## Zero-Variance Handling
+
+Constant sensor history produces a standard deviation of zero.
+
+FactoryPulse handles this explicitly.
+
+If:
+
+`current value == historical mean`
+
+then:
+
+`anomaly_score = 0`
+
+and the reading is normal.
+
+If the current value differs from a completely constant historical baseline, the reading receives an anomaly score above the configured threshold and is classified as anomalous.
+
+This avoids division-by-zero errors while still detecting meaningful departures from a stable sensor baseline.
+
+---
+
+## Historical Reading Query
+
+The SensorReading service now supports:
+
+`get_recent_readings_before()`
+
+The function retrieves historical readings belonging to the same Sensor.
+
+The current reading is never included in its own historical baseline.
+
+The query also supports historical reprocessing by selecting only readings occurring before the target reading.
+
+Ordering uses:
+
+- `recorded_at`
+- `id`
+
+This ensures deterministic historical ordering even when multiple readings have identical timestamps.
+
+The current history limit is:
+
+`50 readings`
+
+The value can be changed or made configurable later.
+
+---
+
+## AI Automation Service
+
+Implemented in:
+
+`backend/app/services/ai_automation_service.py`
+
+The main orchestration function is:
+
+`process_sensor_reading()`
+
+Its workflow is:
+
+SensorReading
+
+↓
+
+Load previous readings for the Sensor
+
+↓
+
+Convert historical readings to numerical history
+
+↓
+
+Run the selected InferenceEngine
+
+↓
+
+Receive InferenceResult
+
+↓
+
+Create Prediction
+
+↓
+
+Persist Prediction
+
+The automatically generated Prediction includes:
+
+`source_reading_id = reading.id`
+
+This maintains the Phase 4 traceability chain:
+
+SensorReading
+
+↓
+
+Prediction
+
+↓
+
+Alert
+
+---
+
+## Default Inference Engine
+
+FactoryPulse currently configures:
+
+`StatisticalZScoreEngine`
+
+as the default inference engine.
+
+Default configuration:
+
+`threshold = 3.0`
+
+`min_history = 10`
+
+The orchestration function accepts an `InferenceEngine` parameter, allowing another engine to be injected without rewriting the workflow.
+
+For example, future integrations may use:
+
+`process_sensor_reading(..., engine=XGBoostEngine(...))`
+
+while the surrounding SensorReading and Prediction persistence flow remains unchanged.
+
+---
+
+## AI Baseline Unit Tests
+
+Implemented in:
+
+`tests/test_ai_baseline.py`
+
+The tests verify:
+
+- no-history behavior
+- insufficient-history behavior
+- normal-reading classification
+- anomalous-reading classification
+- constant-history normal readings
+- constant-history deviations
+- invalid engine configuration
+
+Total baseline inference tests:
+
+`7`
+
+---
+
+## AI Automation Tests
+
+Implemented in:
+
+`tests/test_ai_automation.py`
+
+The tests verify that:
+
+1. A persisted SensorReading can be processed by the AI orchestration service.
+2. A real Prediction is automatically created.
+3. The Prediction references the source SensorReading.
+4. The model metadata is persisted.
+5. Historical values are used as the inference baseline.
+6. The current reading is not included in its own historical baseline.
+7. An extreme reading is correctly classified as an anomaly.
+
+One automated scenario creates ten historical readings with:
+
+`value = 50`
+
+followed by:
+
+`value = 80`
+
+The resulting Prediction keeps:
+
+`predicted_value ≈ 50`
+
+and classifies the new reading as anomalous.
+
+This confirms that the current reading does not contaminate its own baseline.
+
+---
+
+## Current Automated Test Status
+
+Previous backend suite:
+
+`12 passed`
+
+AI baseline tests:
+
+`7 passed`
+
+AI orchestration tests:
+
+`2 passed`
+
+Current total:
+
+`21 passed`
+
+All previous Industrial Hierarchy and Prediction traceability tests continue passing.
+
+---
+
+## Current AI Automation Architecture
+
+The implemented architecture is now:
+
+SensorReading
+
+↓
+
+Historical Sensor Data
+
+↓
+
+AI Orchestration Service
+
+↓
+
+InferenceEngine
+
+↓
+
+StatisticalZScoreEngine
+
+↓
+
+InferenceResult
+
+↓
+
+Prediction
+
+The orchestration layer and inference engine currently operate correctly when explicitly invoked.
+
+The SensorReading API has not yet been connected to automatic inference.
+
+---
+
+## Next AI Milestone
+
+The next milestone is automatic ingestion integration.
+
+Target flow:
+
+POST `/sensor-readings`
+
+↓
+
+Validate Sensor
+
+↓
+
+Persist SensorReading
+
+↓
+
+Automatically process the SensorReading
+
+↓
+
+Automatically create Prediction
+
+After this integration, clients will no longer need to manually call:
+
+POST `/predictions`
+
+for the normal automated inference workflow.
+
+Manual Prediction creation may remain available for development, testing, and specialized workflows.
