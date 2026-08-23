@@ -174,3 +174,46 @@ async def test_process_sensor_reading_detects_anomaly(
         assert prediction.anomaly_score is not None
         assert prediction.anomaly_score >= 3.0
         assert prediction.is_anomaly is True
+
+async def test_sensor_reading_api_automatically_creates_prediction(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    sensor_id = await create_ai_sensor(
+        client,
+        auth_headers["admin"],
+    )
+
+    reading_response = await client.post(
+        "/sensor-readings",
+        headers=auth_headers["admin"],
+        json={
+            "sensor_id": sensor_id,
+            "value": 55.0,
+        },
+    )
+
+    assert reading_response.status_code == 201
+
+    reading = reading_response.json()
+
+    predictions_response = await client.get(
+        f"/sensors/{sensor_id}/predictions",
+        headers=auth_headers["operator"],
+    )
+
+    assert predictions_response.status_code == 200
+
+    predictions = predictions_response.json()
+
+    assert len(predictions) == 1
+
+    prediction = predictions[0]
+
+    assert prediction["sensor_id"] == sensor_id
+    assert prediction["source_reading_id"] == reading["id"]
+    assert prediction["predicted_value"] == pytest.approx(55.0)
+    assert prediction["anomaly_score"] is None
+    assert prediction["is_anomaly"] is False
+    assert prediction["model_name"] == "statistical-zscore"
+    assert prediction["model_version"] == "1.0"

@@ -802,3 +802,240 @@ POST `/predictions`
 for the normal automated inference workflow.
 
 Manual Prediction creation may remain available for development, testing, and specialized workflows.
+
+
+
+---
+
+## Automatic SensorReading Inference Integration
+
+The SensorReading ingestion API is now connected directly to the FactoryPulse AI automation layer.
+
+Previously, the AI orchestration service could process a SensorReading when explicitly called by backend code.
+
+The normal ingestion workflow is now automatic.
+
+Current flow:
+
+POST `/sensor-readings`
+
+↓
+
+Validate Sensor
+
+↓
+
+Persist SensorReading
+
+↓
+
+Run `process_sensor_reading()`
+
+↓
+
+Load historical readings
+
+↓
+
+Run the configured InferenceEngine
+
+↓
+
+Create Prediction automatically
+
+↓
+
+Return SensorReading response
+
+The API contract for SensorReading creation remains unchanged.
+
+Clients submit sensor data normally and receive the created SensorReading, while AI inference runs automatically as part of the ingestion workflow.
+
+---
+
+## Automatic Prediction Generation
+
+A client no longer needs to manually call:
+
+POST `/predictions`
+
+for the standard AI workflow.
+
+When a SensorReading is created, FactoryPulse automatically generates a Prediction containing:
+
+- `sensor_id`
+- `source_reading_id`
+- `predicted_value`
+- `anomaly_score`
+- `is_anomaly`
+- `model_name`
+- `model_version`
+
+The Prediction is therefore directly traceable to the SensorReading that triggered inference.
+
+The automatic chain is:
+
+SensorReading
+
+↓
+
+Prediction
+
+with:
+
+`Prediction.source_reading_id = SensorReading.id`
+
+---
+
+## API Integration Strategy
+
+Automatic inference is currently synchronous.
+
+This means:
+
+1. The SensorReading is persisted.
+2. FactoryPulse immediately performs inference.
+3. The resulting Prediction is persisted.
+4. The SensorReading API request completes.
+
+This approach is appropriate for the current development phase because the baseline inference engine is lightweight and deterministic.
+
+Future high-volume industrial ingestion may move AI processing to:
+
+- background workers
+- task queues
+- event-driven processing
+- streaming infrastructure
+
+This would allow SensorReading ingestion to remain fast even when advanced models require heavier computation.
+
+The current orchestration architecture is intentionally model-independent so that this evolution can occur without redesigning the complete ingestion API.
+
+---
+
+## Automatic Inference API Test
+
+An end-to-end automated test verifies the new workflow.
+
+The test performs:
+
+POST `/sensor-readings`
+
+↓
+
+receives `201 Created`
+
+↓
+
+GET `/sensors/{sensor_id}/predictions`
+
+↓
+
+verifies that a Prediction was automatically created
+
+The test confirms:
+
+- the Prediction belongs to the correct Sensor
+- `source_reading_id` matches the newly created SensorReading
+- the baseline model name is persisted
+- the model version is persisted
+- the inference result is returned correctly
+- no manual Prediction creation request is required
+
+---
+
+## Manual Swagger Verification
+
+The automatic workflow was also verified manually through FastAPI Swagger.
+
+A SensorReading was created using:
+
+POST `/sensor-readings`
+
+No manual request was made to:
+
+POST `/predictions`
+
+The Predictions API was then queried using:
+
+GET `/sensors/{sensor_id}/predictions`
+
+The automatically generated Prediction was present and contained:
+
+`source_reading_id = created SensorReading ID`
+
+`model_name = statistical-zscore`
+
+`model_version = 1.0`
+
+This confirms that automatic inference works through the real API workflow in addition to the automated test suite.
+
+---
+
+## Current Automated Test Status
+
+Previous test suite:
+
+`21 passed`
+
+Automatic ingestion integration test:
+
+`1 passed`
+
+Current total:
+
+`22 passed`
+
+All previous Industrial Hierarchy, traceability, inference, and AI orchestration regression tests continue passing.
+
+---
+
+## Current Automated Intelligence Flow
+
+FactoryPulse now supports:
+
+SensorReading
+
+↓
+
+Historical Sensor Data
+
+↓
+
+AI Orchestration Service
+
+↓
+
+StatisticalZScoreEngine
+
+↓
+
+InferenceResult
+
+↓
+
+Prediction automatically persisted
+
+The next AI milestone is:
+
+**Automatically generate an Alert when an automatically generated Prediction is classified as anomalous.**
+
+Target flow:
+
+SensorReading
+
+↓
+
+Prediction
+
+↓
+
+`is_anomaly = true`
+
+↓
+
+Risk evaluation
+
+↓
+
+Alert automatically generated

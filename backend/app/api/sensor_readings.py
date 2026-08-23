@@ -13,6 +13,7 @@ from app.services.sensor_reading_service import (
     get_sensor_readings,
 )
 from app.services.sensor_service import get_sensor_by_id
+from app.services.ai_automation_service import process_sensor_reading
 
 
 router = APIRouter(
@@ -30,7 +31,10 @@ async def create_sensor_reading_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*READING_WRITE_ROLES)),
 ) -> SensorReadingResponse:
-    sensor = await get_sensor_by_id(db, reading_data.sensor_id)
+    sensor = await get_sensor_by_id(
+        db,
+        reading_data.sensor_id,
+    )
 
     if sensor is None:
         raise HTTPException(
@@ -38,7 +42,17 @@ async def create_sensor_reading_endpoint(
             detail="Sensor not found",
         )
 
-    return await create_sensor_reading(db, reading_data)
+    reading = await create_sensor_reading(
+        db,
+        reading_data,
+    )
+
+    await process_sensor_reading(
+        db,
+        reading,
+    )
+
+    return reading
 
 
 @router.get(
