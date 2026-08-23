@@ -7,6 +7,9 @@ from app.models.sensor_reading import SensorReading
 from app.schemas.prediction import PredictionCreate
 from app.services.prediction_service import create_prediction
 from app.services.sensor_reading_service import get_recent_readings_before
+from app.services.alert_automation_service import (
+    create_alert_for_prediction,
+)
 
 
 DEFAULT_INFERENCE_ENGINE = StatisticalZScoreEngine(
@@ -47,7 +50,15 @@ async def process_sensor_reading(
         model_version=inference_result.model_version,
     )
 
-    return await create_prediction(
+    prediction = await create_prediction(
         db,
         prediction_data,
     )
+
+    await create_alert_for_prediction(
+        db,
+        reading,
+        prediction,
+    )   
+
+    return prediction

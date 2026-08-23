@@ -217,3 +217,108 @@ async def test_sensor_reading_api_automatically_creates_prediction(
     assert prediction["is_anomaly"] is False
     assert prediction["model_name"] == "statistical-zscore"
     assert prediction["model_version"] == "1.0"
+
+
+async def test_normal_sensor_reading_does_not_create_alert(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    ) -> None:
+    sensor_id = await create_ai_sensor(
+        client,
+        auth_headers["admin"],
+    )
+
+    reading_response = await client.post(
+        "/sensor-readings",
+        headers=auth_headers["admin"],
+        json={
+            "sensor_id": sensor_id,
+            "value": 50.0,
+        },
+    )
+
+    assert reading_response.status_code == 201
+
+    alerts_response = await client.get(
+        f"/sensors/{sensor_id}/alerts",
+        headers=auth_headers["operator"],
+    )
+
+    assert alerts_response.status_code == 200
+    assert alerts_response.json() == []
+
+
+async def test_anomalous_sensor_reading_automatically_creates_alert(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    sensor_id = await create_ai_sensor(
+        client,
+        auth_headers["admin"],
+    )
+
+    for _ in range(10):
+        response = await client.post(
+            "/sensor-readings",
+            headers=auth_headers["admin"],
+            json={
+                "sensor_id": sensor_id,
+                "value": 50.0,
+            },
+        )
+
+        assert response.status_code == 201
+
+    anomalous_response = await client.post(
+        "/sensor-readings",
+        headers=auth_headers["admin"],
+        json={
+            "sensor_id": sensor_id,
+            "value": 80.0,
+        },
+    )
+
+    assert anomalous_response.status_code == 201
+    anomalous_reading = anomalous_response.json()
+
+    predictions_response = await client.get(
+        f"/sensors/{sensor_id}/predictions",
+        headers=auth_headers["operator"],
+    )
+
+    assert predictions_response.status_code == 200
+
+    predictions = predictions_response.json()
+
+    anomaly_predictions = [
+        prediction
+        for prediction in predictions
+        if prediction["source_reading_id"]
+        == anomalous_reading["id"]
+    ]
+
+    assert len(anomaly_predictions) == 1
+
+    prediction = anomaly_predictions[0]
+
+    assert prediction["is_anomaly"] is True
+    assert prediction["anomaly_score"] is not None
+
+    alerts_response = await client.get(
+        f"/sensors/{sensor_id}/alerts",
+        headers=auth_headers["operator"],
+    )
+
+    assert alerts_response.status_code == 200
+
+    alerts = alerts_response.json()
+
+    assert len(alerts) == 1
+
+    alert = alerts[0]
+
+    assert alert["sensor_id"] == sensor_id
+    assert alert["prediction_id"] == prediction["id"]
+    assert alert["severity"] == "medium"
+    assert alert["status"] == "open"
+    assert alert["title"] == "AI anomaly detected"

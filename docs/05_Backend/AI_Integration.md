@@ -1039,3 +1039,429 @@ Risk evaluation
 ↓
 
 Alert automatically generated
+
+
+
+
+
+
+---
+
+## Automatic AI Alert Generation
+
+FactoryPulse now automatically generates Alerts from anomalous AI Predictions.
+
+The automated intelligence workflow is:
+
+SensorReading
+
+↓
+
+Historical Sensor Data
+
+↓
+
+Inference Engine
+
+↓
+
+Prediction
+
+↓
+
+Risk Evaluation
+
+↓
+
+Alert when required
+
+The inference model remains responsible for determining whether a reading is anomalous.
+
+Alert severity is determined separately by the risk-evaluation layer.
+
+This separation keeps model inference independent from operational alert policy.
+
+---
+
+## Risk Evaluation Layer
+
+Implemented in:
+
+`backend/app/ai/risk.py`
+
+The main components are:
+
+- `RiskAssessment`
+- `AnomalyRiskEvaluator`
+
+`RiskAssessment` contains:
+
+- `should_alert`
+- `severity`
+
+The risk evaluator receives:
+
+- `is_anomaly`
+- `anomaly_score`
+
+and determines whether an Alert should be generated.
+
+Current baseline policy:
+
+`not anomalous → no Alert`
+
+`anomaly score < 5 → medium`
+
+`5 <= anomaly score < 8 → high`
+
+`anomaly score >= 8 → critical`
+
+If a Prediction is anomalous but does not contain an anomaly score, the baseline severity is:
+
+`medium`
+
+The risk thresholds are intentionally separated from the inference model so they can later become:
+
+- configurable
+- sensor-specific
+- machine-specific
+- organization-specific
+- model-specific
+
+without modifying the underlying machine-learning implementation.
+
+---
+
+## Automatic Alert Service
+
+Implemented in:
+
+`backend/app/services/alert_automation_service.py`
+
+The main function is:
+
+`create_alert_for_prediction()`
+
+The service receives:
+
+- the SensorReading
+- the generated Prediction
+- a risk evaluator
+
+The workflow is:
+
+Prediction
+
+↓
+
+Risk Assessment
+
+↓
+
+No Alert if normal
+
+or
+
+↓
+
+Create Alert if anomalous
+
+Automatically generated Alerts contain:
+
+- `sensor_id`
+- `prediction_id`
+- `severity`
+- `title`
+- `message`
+- `status`
+
+Default title:
+
+`AI anomaly detected`
+
+Default status:
+
+`open`
+
+The generated message includes contextual information such as:
+
+- SensorReading ID
+- actual SensorReading value
+- predicted/expected value
+- anomaly score
+- model name
+- model version
+
+---
+
+## Complete AI Traceability Chain
+
+The automated operational chain is now:
+
+SensorReading
+
+↓
+
+Prediction
+
+↓
+
+Alert
+
+Database traceability is maintained through:
+
+`Prediction.source_reading_id → SensorReading.id`
+
+and:
+
+`Alert.prediction_id → Prediction.id`
+
+This allows FactoryPulse to trace an Alert back to:
+
+1. the Prediction that generated it
+2. the SensorReading that triggered inference
+3. the Sensor that produced the reading
+4. the Machine and industrial hierarchy above that Sensor
+
+---
+
+## AI Orchestration Alert Integration
+
+The existing:
+
+`process_sensor_reading()`
+
+workflow now performs:
+
+1. Load historical SensorReadings.
+2. Run the configured InferenceEngine.
+3. Persist the Prediction.
+4. Evaluate Prediction risk.
+5. Automatically create an Alert when required.
+6. Return the generated Prediction.
+
+Normal Predictions do not generate Alerts.
+
+Anomalous Predictions are passed to the risk evaluator and may generate an Alert.
+
+---
+
+## Risk Evaluation Unit Tests
+
+Implemented in:
+
+`tests/test_ai_risk.py`
+
+Tests verify:
+
+- normal Predictions do not generate Alerts
+- anomalous Predictions without scores receive medium severity
+- medium-severity classification
+- high-severity classification
+- critical-severity classification
+- invalid risk configuration is rejected
+
+Total risk-evaluation tests:
+
+`6`
+
+---
+
+## Automatic Alert Integration Tests
+
+The AI automation test suite verifies:
+
+### Normal Reading
+
+A normal SensorReading automatically generates a Prediction but does not generate an Alert.
+
+Expected:
+
+`GET /sensors/{sensor_id}/alerts`
+
+returns an empty list.
+
+### Anomalous Reading
+
+The automated test creates a stable baseline consisting of ten SensorReadings with:
+
+`value = 50`
+
+It then creates a new SensorReading with:
+
+`value = 80`
+
+FactoryPulse automatically:
+
+1. persists the SensorReading
+2. generates a Prediction
+3. classifies the Prediction as anomalous
+4. evaluates the risk
+5. creates an Alert
+
+The test verifies:
+
+- `Prediction.is_anomaly = true`
+- an anomaly score is present
+- exactly one Alert is created
+- Alert `sensor_id` matches the Sensor
+- Alert `prediction_id` matches the anomalous Prediction
+- Alert status is `open`
+- Alert title is `AI anomaly detected`
+- baseline severity is `medium`
+
+---
+
+## Minimum History Behavior
+
+The default StatisticalZScoreEngine requires:
+
+`min_history = 10`
+
+Anomaly classification remains inactive until the Sensor has enough previous readings.
+
+This behavior was confirmed manually.
+
+For example, when a Sensor had only:
+
+`50`
+
+as historical data and then received:
+
+`80`
+
+FactoryPulse generated:
+
+`predicted_value = 50`
+
+but:
+
+`anomaly_score = null`
+
+`is_anomaly = false`
+
+because insufficient history existed.
+
+This is intentional and prevents FactoryPulse from declaring anomalies before a reliable baseline has been established.
+
+---
+
+## Manual Swagger Verification
+
+The complete automatic intelligence loop was manually verified through FastAPI Swagger.
+
+A fresh Sensor was created.
+
+Ten SensorReadings with:
+
+`value = 50`
+
+were submitted to establish a baseline.
+
+An eleventh SensorReading with:
+
+`value = 80`
+
+was then submitted.
+
+No manual Prediction or Alert was created.
+
+FactoryPulse automatically produced an anomalous Prediction.
+
+The Prediction API confirmed:
+
+- expected historical value around `50`
+- `is_anomaly = true`
+- model `statistical-zscore`
+
+The Alerts API then confirmed that an Alert had automatically been generated.
+
+This manually verifies the same behavior protected by the automated test suite.
+
+---
+
+## Current Automated Test Status
+
+Previous backend suite:
+
+`22 passed`
+
+New risk and Alert automation coverage increased the full suite to:
+
+`30 passed`
+
+Current result:
+
+`30 passed`
+
+All previous hierarchy, authentication fixtures, Prediction traceability, baseline inference, and automatic Prediction tests continue passing.
+
+---
+
+## Current Automated Intelligence Pipeline
+
+FactoryPulse now supports:
+
+SensorReading ingestion
+
+↓
+
+Historical Sensor Data
+
+↓
+
+StatisticalZScoreEngine
+
+↓
+
+InferenceResult
+
+↓
+
+Prediction automatically persisted
+
+↓
+
+Anomaly Risk Evaluation
+
+↓
+
+Alert automatically persisted when required
+
+This is the first complete automated industrial intelligence loop in FactoryPulse.
+
+---
+
+## Next AI Automation Milestone
+
+The next automation layer will build on generated Alerts.
+
+Possible next workflow:
+
+Alert
+
+↓
+
+Notification policy
+
+↓
+
+Notify relevant users
+
+This would extend the current pipeline to:
+
+SensorReading
+
+↓
+
+Prediction
+
+↓
+
+Alert
+
+↓
+
+Notification
+
+Before implementing that layer, the current automatic Alert milestone will be committed and pushed as an independent checkpoint.
