@@ -1,15 +1,21 @@
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
-from app.schemas.notification import NotificationCreate, NotificationUpdate
+from app.schemas.notification import (
+    NotificationCreate,
+    NotificationUpdate,
+)
 
 
 async def create_notification(
     db: AsyncSession,
     notification_data: NotificationCreate,
 ) -> Notification:
-    notification = Notification(**notification_data.model_dump())
+    notification = Notification(
+        **notification_data.model_dump()
+    )
 
     db.add(notification)
     await db.commit()
@@ -23,7 +29,9 @@ async def get_notification_by_id(
     notification_id: int,
 ) -> Notification | None:
     result = await db.execute(
-        select(Notification).where(Notification.id == notification_id)
+        select(Notification).where(
+            Notification.id == notification_id
+        )
     )
 
     return result.scalar_one_or_none()
@@ -33,7 +41,9 @@ async def get_notifications(
     db: AsyncSession,
 ) -> list[Notification]:
     result = await db.execute(
-        select(Notification).order_by(Notification.created_at.desc())
+        select(Notification).order_by(
+            Notification.created_at.desc()
+        )
     )
 
     return list(result.scalars().all())
@@ -45,8 +55,12 @@ async def get_notifications_by_user(
 ) -> list[Notification]:
     result = await db.execute(
         select(Notification)
-        .where(Notification.user_id == user_id)
-        .order_by(Notification.created_at.desc())
+        .where(
+            Notification.user_id == user_id
+        )
+        .order_by(
+            Notification.created_at.desc()
+        )
     )
 
     return list(result.scalars().all())
@@ -57,10 +71,16 @@ async def update_notification(
     notification: Notification,
     notification_data: NotificationUpdate,
 ) -> Notification:
-    update_data = notification_data.model_dump(exclude_unset=True)
+    update_data = notification_data.model_dump(
+        exclude_unset=True
+    )
 
     for field, value in update_data.items():
-        setattr(notification, field, value)
+        setattr(
+            notification,
+            field,
+            value,
+        )
 
     await db.commit()
     await db.refresh(notification)
@@ -88,16 +108,42 @@ async def create_notifications(
     if not notifications_data:
         return []
 
-    notifications = [
-        Notification(**notification_data.model_dump())
+    insert_data = [
+        notification_data.model_dump()
         for notification_data in notifications_data
     ]
 
-    db.add_all(notifications)
+    statement = (
+        insert(Notification)
+        .values(insert_data)
+        .on_conflict_do_nothing(
+            index_elements=[
+                Notification.user_id,
+                Notification.alert_id,
+                Notification.channel,
+            ],
+            index_where=Notification.alert_id.is_not(None),
+        )
+        .returning(Notification.id)
+    )
+
+    result = await db.execute(statement)
+
+    created_ids = list(
+        result.scalars().all()
+    )
 
     await db.commit()
 
-    for notification in notifications:
-        await db.refresh(notification)
+    if not created_ids:
+        return []
 
-    return notifications
+    result = await db.execute(
+        select(Notification)
+        .where(
+            Notification.id.in_(created_ids)
+        )
+        .order_by(Notification.id)
+    )
+
+    return list(result.scalars().all())

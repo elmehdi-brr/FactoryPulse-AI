@@ -11,7 +11,9 @@ from app.schemas.prediction import PredictionCreate
 from app.services.alert_automation_service import (
     create_alert_for_prediction,
 )
-from app.services.prediction_service import create_prediction
+from app.services.prediction_service import (
+    create_prediction_idempotently,
+)
 from app.services.sensor_ai_config_service import (
     resolve_sensor_ai_settings,
 )
@@ -74,7 +76,7 @@ async def process_sensor_reading(
         model_version=inference_result.model_version,
     )
 
-    prediction = await create_prediction(
+    prediction = await create_prediction_idempotently(
         db,
         prediction_data,
     )

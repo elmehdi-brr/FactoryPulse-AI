@@ -2898,3 +2898,690 @@ Notification
 Each Sensor can therefore have its own anomaly sensitivity and operational risk behavior while remaining part of the same FactoryPulse platform.
 
 This completes the first Sensor-specific configurable AI runtime foundation.
+
+
+---
+
+## AI Processing Idempotency and Retry Safety
+
+FactoryPulse AI now supports safe reprocessing of already persisted SensorReadings.
+
+Industrial systems may retry work because of:
+
+- worker restarts
+- temporary application failures
+- network interruptions
+- background job retries
+- message redelivery
+- manual reprocessing
+- concurrent processing attempts
+
+Without idempotency protection, processing the same SensorReading more than once could create duplicate:
+
+- Predictions
+- Alerts
+- Notifications
+
+FactoryPulse now protects the complete automated downstream chain.
+
+---
+
+## Idempotency Scope
+
+Idempotency applies to reprocessing the same persisted SensorReading.
+
+It does not deduplicate separate telemetry events that happen to contain the same value.
+
+Example:
+
+SensorReading #100
+
+`value = 50`
+
+and:
+
+SensorReading #101
+
+`value = 50`
+
+are two legitimate separate readings.
+
+Both may independently produce Predictions.
+
+The protected case is:
+
+SensorReading #100
+
+↓
+
+AI processing
+
+↓
+
+Prediction
+
+followed by another processing attempt of:
+
+SensorReading #100
+
+The second processing attempt must reuse the existing result rather than create a duplicate.
+
+---
+
+## Automated Prediction Identity
+
+An automatically generated Prediction is identified by:
+
+`source_reading_id`
+
++
+
+`model_name`
+
++
+
+`model_version`
+
+Example:
+
+SensorReading:
+
+`125`
+
+Model:
+
+`statistical-zscore`
+
+Version:
+
+`1.0`
+
+This combination may exist only once.
+
+This design intentionally does not make:
+
+`source_reading_id`
+
+globally unique.
+
+The same SensorReading may therefore be evaluated by different models or model versions in future FactoryPulse implementations.
+
+Example:
+
+SensorReading #125
+
+↓
+
+`statistical-zscore 1.0`
+
+and:
+
+SensorReading #125
+
+↓
+
+`xgboost 2.0`
+
+can coexist as separate Predictions.
+
+---
+
+## Prediction Database Protection
+
+The Prediction model now includes a PostgreSQL partial unique index:
+
+`ux_predictions_source_model_version`
+
+The protected columns are:
+
+- `source_reading_id`
+- `model_name`
+- `model_version`
+
+The index applies only when:
+
+`source_reading_id IS NOT NULL`
+
+This means manually created Predictions without a source SensorReading remain unrestricted by this automated-processing identity.
+
+The index also uses:
+
+`NULLS NOT DISTINCT`
+
+so a nullable model version cannot bypass uniqueness.
+
+Database rule:
+
+`(source_reading_id, model_name, model_version)`
+
+must be unique for automatically traceable Predictions.
+
+---
+
+## Prediction Retry Service
+
+The Prediction service now supports:
+
+`get_prediction_by_source_and_model()`
+
+and:
+
+`create_prediction_idempotently()`
+
+The workflow is:
+
+Prediction request
+
+↓
+
+Source reading exists?
+
+↓
+
+Check existing Prediction using:
+
+`source_reading_id + model_name + model_version`
+
+↓
+
+Existing Prediction found?
+
+YES
+
+↓
+
+Return existing Prediction
+
+NO
+
+↓
+
+Attempt creation
+
+↓
+
+Concurrent insert conflict?
+
+NO
+
+↓
+
+Return newly created Prediction
+
+YES
+
+↓
+
+Rollback failed transaction
+
+↓
+
+Load the Prediction created by the competing worker
+
+↓
+
+Return existing Prediction
+
+This provides both:
+
+- application-level graceful reuse
+- database-level uniqueness enforcement
+
+Manual Predictions where:
+
+`source_reading_id = null`
+
+continue using ordinary Prediction creation.
+
+---
+
+## Alert Identity
+
+An AI-generated Prediction can produce at most one Alert.
+
+The Alert identity is therefore:
+
+`prediction_id`
+
+A Prediction-linked Alert must not be duplicated during retries.
+
+Manual Alerts with:
+
+`prediction_id = null`
+
+remain unrestricted.
+
+---
+
+## Alert Database Protection
+
+The Alert model now includes the PostgreSQL partial unique index:
+
+`ux_alerts_prediction_id`
+
+The index enforces:
+
+`UNIQUE (prediction_id)`
+
+when:
+
+`prediction_id IS NOT NULL`
+
+Therefore:
+
+Prediction #25
+
+↓
+
+Alert #10
+
+is valid.
+
+A second Alert referencing:
+
+Prediction #25
+
+is rejected by PostgreSQL.
+
+Manual Alerts without a Prediction reference remain unaffected.
+
+---
+
+## Alert Retry Service
+
+The Alert service now supports:
+
+`get_alert_by_prediction_id()`
+
+and:
+
+`create_alert_idempotently()`
+
+The workflow is:
+
+Prediction
+
+↓
+
+Evaluate risk
+
+↓
+
+Alert required?
+
+↓
+
+Check existing Alert for Prediction
+
+↓
+
+Existing Alert?
+
+YES
+
+↓
+
+Reuse it
+
+NO
+
+↓
+
+Attempt creation
+
+↓
+
+Concurrent insert conflict?
+
+YES
+
+↓
+
+Rollback
+
+↓
+
+Retrieve Alert created by the competing worker
+
+↓
+
+Reuse it
+
+The automatic Alert workflow now uses this idempotent creation path.
+
+---
+
+## Notification Identity
+
+For Alert-based notifications, delivery identity is defined by:
+
+`user_id`
+
++
+
+`alert_id`
+
++
+
+`channel`
+
+This allows one recipient to receive the same Alert through multiple channels in future.
+
+Example:
+
+User #5 + Alert #12 + `in_app` ✅
+
+User #5 + Alert #12 + `email` ✅
+
+User #5 + Alert #12 + `sms` ✅
+
+However:
+
+User #5 + Alert #12 + `in_app`
+
+cannot be stored twice.
+
+---
+
+## Notification Database Protection
+
+The Notification model now includes:
+
+`ux_notifications_user_alert_channel`
+
+The partial unique index protects:
+
+- `user_id`
+- `alert_id`
+- `channel`
+
+when:
+
+`alert_id IS NOT NULL`
+
+Notifications unrelated to an Alert remain unrestricted.
+
+This gives FactoryPulse database-level duplicate protection for Alert delivery records.
+
+---
+
+## Concurrency-Safe Notification Persistence
+
+Notification persistence now uses PostgreSQL:
+
+`INSERT ... ON CONFLICT DO NOTHING`
+
+for automatic batch Notification generation.
+
+The workflow is:
+
+Find eligible recipients
+
+↓
+
+Remove users already notified
+
+↓
+
+Attempt batch Notification insert
+
+↓
+
+PostgreSQL unique index verifies:
+
+`user_id + alert_id + channel`
+
+↓
+
+Non-conflicting Notifications are inserted
+
+↓
+
+Concurrent duplicate attempts are ignored
+
+↓
+
+Only newly created Notification IDs are returned
+
+This prevents an IntegrityError from escaping when two workers attempt to create the same Alert Notification concurrently.
+
+FactoryPulse therefore combines:
+
+- recipient pre-filtering
+- database uniqueness
+- PostgreSQL conflict handling
+
+for Notification retry safety.
+
+---
+
+## Complete Retry-Safe AI Pipeline
+
+The automated pipeline now behaves as:
+
+SensorReading
+
+↓
+
+Resolve Sensor-specific AI settings
+
+↓
+
+Resolve model identity
+
+↓
+
+Prediction
+
+├── application-level reuse
+
+└── database uniqueness
+
+↓
+
+Risk Evaluation
+
+↓
+
+Alert
+
+├── application-level reuse
+
+└── database uniqueness
+
+↓
+
+Recipient Resolution
+
+↓
+
+Notification
+
+├── existing-recipient filtering
+
+├── database uniqueness
+
+└── `ON CONFLICT DO NOTHING`
+
+This allows the same persisted SensorReading to be processed repeatedly without duplicating downstream operational records.
+
+---
+
+## Database Idempotency Constraints
+
+The current database-backed protections are:
+
+### Prediction
+
+Index:
+
+`ux_predictions_source_model_version`
+
+Identity:
+
+`source_reading_id + model_name + model_version`
+
+### Alert
+
+Index:
+
+`ux_alerts_prediction_id`
+
+Identity:
+
+`prediction_id`
+
+### Notification
+
+Index:
+
+`ux_notifications_user_alert_channel`
+
+Identity:
+
+`user_id + alert_id + channel`
+
+Together these indexes act as the final concurrency-safety layer even if multiple application workers process the same event.
+
+---
+
+## Retry Integration Test
+
+Implemented in:
+
+`tests/test_ai_idempotency.py`
+
+The test creates:
+
+- one industrial hierarchy
+- one Sensor
+- ten baseline SensorReadings
+- one anomalous SensorReading
+
+The anomalous SensorReading initially triggers the normal automatic pipeline.
+
+FactoryPulse creates:
+
+1. Prediction
+2. Alert
+3. Notifications
+
+The test then deliberately calls:
+
+`process_sensor_reading()`
+
+multiple additional times using the exact same persisted anomalous SensorReading.
+
+After repeated processing, the database is verified.
+
+Expected result:
+
+SensorReading:
+
+`1`
+
+Prediction for the reading/model/version:
+
+`1`
+
+Alert for the Prediction:
+
+`1`
+
+Automatic in-app Notifications:
+
+`3`
+
+The Notifications correspond to the eligible test roles:
+
+- Admin
+- Manager
+- Technician
+
+Each recipient appears only once.
+
+The Operator remains excluded by the existing automatic Notification policy.
+
+The retry calls also return the same persisted Prediction ID.
+
+This proves application-level reuse and database-level protections work together.
+
+---
+
+## Automated Test Status
+
+Previous backend total:
+
+`50 passed`
+
+New explicit retry/idempotency integration test:
+
+`1 passed`
+
+Current backend total:
+
+`51 passed`
+
+All previous tests remain passing.
+
+The complete test suite now covers:
+
+- health and test environment isolation
+- authentication and RBAC
+- industrial hierarchy
+- Prediction source traceability
+- baseline statistical inference
+- automatic Prediction generation
+- anomaly risk evaluation
+- automatic Alert generation
+- automatic Notification generation
+- Notification recipient policy
+- Sensor-specific AI configuration
+- Sensor-specific runtime inference behavior
+- configurable history windows
+- AI enablement and disablement
+- Sensor-specific risk thresholds
+- Prediction retry safety
+- Alert retry safety
+- Notification duplicate protection
+- end-to-end AI pipeline idempotency
+
+---
+
+## Current AI Reliability Architecture
+
+FactoryPulse now combines:
+
+Configuration
+
+↓
+
+Automated inference
+
+↓
+
+Traceability
+
+↓
+
+Risk evaluation
+
+↓
+
+Operational Alerting
+
+↓
+
+Notification routing
+
+↓
+
+Idempotent persistence
+
+↓
+
+Database concurrency protection
+
+The same persisted industrial event can therefore be safely retried without producing duplicate AI Predictions, operational Alerts, or Alert Notifications.
+
+This establishes the first robust retry-safe processing foundation for future background workers, message queues, distributed processing, and asynchronous AI execution.
