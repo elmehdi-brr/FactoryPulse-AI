@@ -1,6 +1,16 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -8,12 +18,31 @@ from app.db.base import Base
 
 class Prediction(Base):
     __tablename__ = "predictions"
+    __table_args__ = (
+        Index(
+            "ux_predictions_source_model_version",
+            "source_reading_id",
+            "model_name",
+            "model_version",
+            unique=True,
+            postgresql_where=text(
+                "source_reading_id IS NOT NULL"
+            ),
+            postgresql_nulls_not_distinct=True,
+        ),
+    )
+    
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
     sensor_id: Mapped[int] = mapped_column(
         ForeignKey("sensors.id"),
         nullable=False,
+    )
+    source_reading_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sensor_readings.id"),
+        nullable=True,
+        index=True,
     )
 
     predicted_value: Mapped[float] = mapped_column(Float, nullable=False)
@@ -41,3 +70,4 @@ class Prediction(Base):
 
     sensor: Mapped["Sensor"] = relationship(back_populates="predictions")
     alerts: Mapped[list["Alert"]] = relationship(back_populates="prediction")
+    source_reading: Mapped["SensorReading | None"] = relationship(back_populates="predictions")

@@ -1,9 +1,11 @@
+from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
+from app.models.role import Role
 
 
 async def get_user_by_id(
@@ -35,6 +37,25 @@ async def get_users(
 ) -> list[User]:
     result = await db.execute(
         select(User).order_by(User.id)
+    )
+
+    return list(result.scalars().all())
+
+async def get_active_users_by_roles(
+    db: AsyncSession,
+    role_names: Sequence[str],
+) -> list[User]:
+    result = await db.execute(
+        select(User)
+        .join(
+            Role,
+            User.role_id == Role.id,
+        )
+        .where(
+            User.is_active.is_(True),
+            Role.name.in_(role_names),
+        )
+        .order_by(User.id)
     )
 
     return list(result.scalars().all())

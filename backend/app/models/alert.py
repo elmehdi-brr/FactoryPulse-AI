@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -8,6 +8,16 @@ from app.db.base import Base
 
 class Alert(Base):
     __tablename__ = "alerts"
+    __table_args__ = (
+        Index(
+            "ux_alerts_prediction_id",
+            "prediction_id",
+            unique=True,
+            postgresql_where=text(
+                "prediction_id IS NOT NULL"
+            ),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 

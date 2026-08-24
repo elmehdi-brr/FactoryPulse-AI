@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sensor_reading import SensorReading
@@ -47,6 +47,32 @@ async def get_readings_by_sensor(
         select(SensorReading)
         .where(SensorReading.sensor_id == sensor_id)
         .order_by(SensorReading.recorded_at.desc())
+    )
+
+    return list(result.scalars().all())
+
+async def get_recent_readings_before(
+    db: AsyncSession,
+    reading: SensorReading,
+    limit: int = 50,
+) -> list[SensorReading]:
+    result = await db.execute(
+        select(SensorReading)
+        .where(
+            SensorReading.sensor_id == reading.sensor_id,
+            or_(
+                SensorReading.recorded_at < reading.recorded_at,
+                and_(
+                    SensorReading.recorded_at == reading.recorded_at,
+                    SensorReading.id < reading.id,
+                ),
+            ),
+        )
+        .order_by(
+            SensorReading.recorded_at.desc(),
+            SensorReading.id.desc(),
+        )
+        .limit(limit)
     )
 
     return list(result.scalars().all())

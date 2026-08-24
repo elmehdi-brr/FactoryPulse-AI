@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -8,6 +8,18 @@ from app.db.base import Base
 
 class Notification(Base):
     __tablename__ = "notifications"
+    __table_args__ = (
+        Index(
+            "ux_notifications_user_alert_channel",
+            "user_id",
+            "alert_id",
+            "channel",
+            unique=True,
+            postgresql_where=text(
+                "alert_id IS NOT NULL"
+            ),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 

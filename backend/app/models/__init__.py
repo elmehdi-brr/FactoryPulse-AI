@@ -11,6 +11,8 @@ from .organization import Organization
 from .site import Site
 from .area import Area
 from .production_line import ProductionLine
+from .sensor_ai_config import SensorAIConfig
+from .ai_processing_state import AIProcessingState
 
 __all__ = [
     "Alert",
@@ -26,4 +28,6 @@ __all__ = [
     "Site",
     "Area",
     "ProductionLine",
+    "SensorAIConfig",
+    "AIProcessingState",
 ]

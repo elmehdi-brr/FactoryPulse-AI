@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import require_roles, user_has_any_role
 from app.core.rbac import ALL_ROLES, MANAGEMENT_ROLES
@@ -15,6 +16,7 @@ from app.services.notification_service import (
     create_notification,
     get_notification_by_id,
     get_notifications,
+    get_notification_by_user_alert_channel,
     get_notifications_by_user,
     update_notification,
 )
@@ -55,8 +57,39 @@ async def create_notification_endpoint(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Alert not found",
             )
+        existing_notification = (
+            await get_notification_by_user_alert_channel(
+                db,
+                user_id=notification_data.user_id,
+                alert_id=notification_data.alert_id,
+                channel=notification_data.channel,
+            )
+        )
 
-    return await create_notification(db, notification_data)
+        if existing_notification is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Notification already exists for this user, "
+                    "alert, and channel"
+                ),
+            )
+
+    try:
+        return await create_notification(
+            db,
+            notification_data,
+        )
+    except IntegrityError:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Notification already exists for this user, "
+                "alert, and channel"
+            ),
+        )
 
 
 @router.get(

@@ -55,6 +55,16 @@ async def auth_headers() -> dict[str, dict[str, str]]:
             description="Test administrator",
         )
 
+        manager_role = Role(
+            name="manager",
+            description="Test manager",
+        )
+
+        technician_role = Role(
+            name="technician",
+            description="Test technician",
+        )
+
         operator_role = Role(
             name="operator",
             description="Test operator",
@@ -62,6 +72,8 @@ async def auth_headers() -> dict[str, dict[str, str]]:
 
         db.add_all([
             admin_role,
+            manager_role,
+            technician_role,
             operator_role,
         ])
 
@@ -70,46 +82,71 @@ async def auth_headers() -> dict[str, dict[str, str]]:
         admin_user = User(
             email="admin@test.factorypulse.local",
             full_name="Test Administrator",
-            hashed_password=hash_password(
-                "test-admin-password"
-            ),
+            hashed_password=hash_password("test-admin-password"),
             role_id=admin_role.id,
+            is_active=True,
+        )
+
+        manager_user = User(
+            email="manager@test.factorypulse.local",
+            full_name="Test Manager",
+            hashed_password=hash_password("test-manager-password"),
+            role_id=manager_role.id,
+            is_active=True,
+        )
+
+        technician_user = User(
+            email="technician@test.factorypulse.local",
+            full_name="Test Technician",
+            hashed_password=hash_password("test-technician-password"),
+            role_id=technician_role.id,
             is_active=True,
         )
 
         operator_user = User(
             email="operator@test.factorypulse.local",
             full_name="Test Operator",
-            hashed_password=hash_password(
-                "test-operator-password"
-            ),
+            hashed_password=hash_password("test-operator-password"),
             role_id=operator_role.id,
             is_active=True,
         )
 
         db.add_all([
             admin_user,
+            manager_user,
+            technician_user,
             operator_user,
         ])
 
         await db.commit()
 
-        await db.refresh(admin_user)
-        await db.refresh(operator_user)
+        for user in (
+            admin_user,
+            manager_user,
+            technician_user,
+            operator_user,
+        ):
+            await db.refresh(user)
 
-        admin_token = create_access_token(
-            subject=str(admin_user.id)
-        )
-
-        operator_token = create_access_token(
-            subject=str(operator_user.id)
-        )
-
-    return {
-        "admin": {
-            "Authorization": f"Bearer {admin_token}"
-        },
-        "operator": {
-            "Authorization": f"Bearer {operator_token}"
-        },
-    }
+        return {
+            "admin": {
+                "Authorization": (
+                    f"Bearer {create_access_token(subject=str(admin_user.id))}"
+                )
+            },
+            "manager": {
+                "Authorization": (
+                    f"Bearer {create_access_token(subject=str(manager_user.id))}"
+                )
+            },
+            "technician": {
+                "Authorization": (
+                    f"Bearer {create_access_token(subject=str(technician_user.id))}"
+                )
+            },
+            "operator": {
+                "Authorization": (
+                    f"Bearer {create_access_token(subject=str(operator_user.id))}"
+                )
+            },
+        }
