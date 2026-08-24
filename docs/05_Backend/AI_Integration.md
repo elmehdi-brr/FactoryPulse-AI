@@ -1858,3 +1858,505 @@ Recipient Policy
 In-App Notifications
 
 This completes the first end-to-end automated operational intelligence loop in FactoryPulse AI.
+
+
+
+---
+
+## Sensor-Specific AI Configuration Foundation
+
+FactoryPulse now supports persistent AI configuration at the individual Sensor level.
+
+The relationship is:
+
+Sensor
+
+↓
+
+0..1 SensorAIConfig
+
+A Sensor can therefore operate with the FactoryPulse default AI behavior when no custom configuration exists, while selected Sensors can receive their own AI settings.
+
+This prepares the platform for heterogeneous industrial environments where different sensor types and machines require different anomaly-detection behavior.
+
+---
+
+## Sensor AI Configuration Model
+
+Implemented in:
+
+`backend/app/models/sensor_ai_config.py`
+
+Database table:
+
+`sensor_ai_configs`
+
+The model contains:
+
+- `id`
+- `sensor_id`
+- `is_enabled`
+- `engine_name`
+- `anomaly_threshold`
+- `min_history`
+- `history_limit`
+- `high_risk_threshold`
+- `critical_risk_threshold`
+- `created_at`
+
+The relationship is one-to-one from Sensor to SensorAIConfig.
+
+`Sensor.ai_config`
+
+uses:
+
+`uselist=False`
+
+and SensorAIConfig uses a unique `sensor_id`.
+
+Therefore a Sensor cannot have multiple AI configuration rows.
+
+---
+
+## Referential Integrity
+
+`SensorAIConfig.sensor_id`
+
+references:
+
+`sensors.id`
+
+with:
+
+`ON DELETE CASCADE`
+
+Deleting a Sensor therefore automatically removes its AI configuration.
+
+The database constraints use explicit names:
+
+`uq_sensor_ai_configs_sensor_id`
+
+for the unique Sensor relationship.
+
+`fk_sensor_ai_configs_sensor_id`
+
+for the Sensor foreign key.
+
+This was verified directly through PostgreSQL.
+
+---
+
+## Configuration Fields
+
+The current AI configuration supports:
+
+### AI Enablement
+
+`is_enabled`
+
+Controls whether automated AI processing is enabled for the Sensor.
+
+Default:
+
+`true`
+
+### Inference Engine
+
+`engine_name`
+
+Current supported engine:
+
+`statistical-zscore`
+
+The API does not currently accept unsupported engine names because no other production inference implementation exists yet.
+
+### Anomaly Threshold
+
+`anomaly_threshold`
+
+Default:
+
+`3.0`
+
+Determines the Z-score threshold used to classify an observation as anomalous.
+
+### Minimum History
+
+`min_history`
+
+Default:
+
+`10`
+
+Defines how many historical SensorReadings are required before statistical anomaly scoring begins.
+
+### History Limit
+
+`history_limit`
+
+Default:
+
+`50`
+
+Controls the maximum number of previous SensorReadings loaded for inference.
+
+### High Risk Threshold
+
+`high_risk_threshold`
+
+Default:
+
+`5.0`
+
+### Critical Risk Threshold
+
+`critical_risk_threshold`
+
+Default:
+
+`8.0`
+
+These thresholds are used by the anomaly risk evaluation layer.
+
+---
+
+## Backward-Compatible Defaults
+
+The Sensor AI configuration defaults intentionally match the AI behavior that FactoryPulse already used before per-Sensor configuration was introduced:
+
+- anomaly threshold: `3.0`
+- minimum history: `10`
+- history limit: `50`
+- high risk threshold: `5.0`
+- critical risk threshold: `8.0`
+- engine: `statistical-zscore`
+
+This allows the runtime integration to preserve existing behavior for Sensors without custom configuration.
+
+---
+
+## Sensor AI Configuration Validation
+
+Implemented in:
+
+`backend/app/schemas/sensor_ai_config.py`
+
+Validation rules include:
+
+`anomaly_threshold > 0`
+
+`min_history >= 2`
+
+`history_limit >= 2`
+
+`history_limit >= min_history`
+
+`high_risk_threshold > 0`
+
+`critical_risk_threshold > 0`
+
+`critical_risk_threshold > high_risk_threshold`
+
+Explicit `null` values are rejected during PATCH requests.
+
+---
+
+## Final-State PATCH Validation
+
+Partial configuration updates are validated against the resulting complete configuration rather than validating fields independently.
+
+Example:
+
+Current configuration:
+
+`min_history = 10`
+
+`history_limit = 50`
+
+PATCH:
+
+`min_history = 100`
+
+The resulting configuration would become invalid because:
+
+`history_limit < min_history`
+
+FactoryPulse therefore rejects the request with HTTP 422 and leaves the existing configuration unchanged.
+
+This prevents partial updates from creating internally inconsistent AI settings.
+
+---
+
+## Sensor AI Configuration Service
+
+Implemented in:
+
+`backend/app/services/sensor_ai_config_service.py`
+
+The service supports:
+
+`get_sensor_ai_config_by_sensor_id()`
+
+`create_sensor_ai_config()`
+
+`update_sensor_ai_config()`
+
+The update service merges:
+
+Existing configuration
+
++
+
+PATCH fields
+
+↓
+
+Complete candidate configuration
+
+↓
+
+Pydantic validation
+
+↓
+
+Database update
+
+A dedicated:
+
+`SensorAIConfigValidationError`
+
+is used to translate final-state configuration errors cleanly into HTTP API responses.
+
+---
+
+## Sensor AI Configuration API
+
+The configuration API is exposed through the Sensor router.
+
+### Create Configuration
+
+POST `/sensors/{sensor_id}/ai-config`
+
+Allowed roles:
+
+- Admin
+- Manager
+
+Response:
+
+`201 Created`
+
+Duplicate configuration:
+
+`409 Conflict`
+
+### Read Configuration
+
+GET `/sensors/{sensor_id}/ai-config`
+
+Allowed roles:
+
+- Admin
+- Manager
+- Technician
+- Operator
+
+Response:
+
+`200 OK`
+
+A Sensor without configuration returns:
+
+`404 Sensor AI configuration not found`
+
+### Update Configuration
+
+PATCH `/sensors/{sensor_id}/ai-config`
+
+Allowed roles:
+
+- Admin
+- Manager
+
+Response:
+
+`200 OK`
+
+Invalid resulting configuration returns:
+
+`422 Unprocessable Content`
+
+---
+
+## Configuration RBAC
+
+Reading AI configuration is available to all authenticated FactoryPulse roles.
+
+Changing AI configuration is restricted to:
+
+- Admin
+- Manager
+
+Technicians and Operators cannot create or modify AI configuration.
+
+This policy reflects the operational impact of changing anomaly thresholds because those settings influence:
+
+Prediction
+
+↓
+
+Anomaly classification
+
+↓
+
+Alert generation
+
+↓
+
+Notification generation
+
+---
+
+## Automated AI Configuration Tests
+
+Implemented in:
+
+`tests/test_sensor_ai_config.py`
+
+The test suite verifies:
+
+- valid configuration creation
+- configuration retrieval
+- partial PATCH updates
+- unchanged fields remain unchanged during PATCH
+- duplicate configuration prevention
+- unknown Sensor handling
+- Sensor without configuration handling
+- Technician write restriction
+- Operator write restriction
+- invalid anomaly threshold rejection
+- invalid history relationship rejection
+- invalid risk threshold relationship rejection
+- explicit null PATCH rejection
+
+The parameterized RBAC test produces separate Technician and Operator test cases.
+
+Dedicated Sensor AI configuration tests:
+
+`12 passed`
+
+Previous FactoryPulse backend total:
+
+`34 passed`
+
+Current backend total:
+
+`46 passed`
+
+---
+
+## Manual Swagger Verification
+
+The Sensor AI configuration API was also verified manually through FastAPI Swagger.
+
+A new Sensor was created and initially confirmed to have no configuration.
+
+GET:
+
+`/sensors/{sensor_id}/ai-config`
+
+correctly returned:
+
+`404 Sensor AI configuration not found`
+
+A custom configuration was then created using:
+
+- anomaly threshold `2.5`
+- minimum history `8`
+- history limit `40`
+- high risk threshold `4.5`
+- critical risk threshold `7.0`
+
+The configuration was successfully persisted and retrieved.
+
+A partial PATCH then changed selected values while preserving fields that were not included in the request.
+
+Duplicate configuration creation correctly returned:
+
+`409 Conflict`
+
+An invalid PATCH setting:
+
+`min_history = 100`
+
+while:
+
+`history_limit = 30`
+
+correctly returned:
+
+`422 Unprocessable Content`
+
+A subsequent GET confirmed that the invalid change was not persisted.
+
+---
+
+## Current Configuration Architecture
+
+The current architecture is:
+
+Sensor
+
+↓
+
+SensorAIConfig
+
+↓
+
+Persistent configuration management
+
+↓
+
+Validation
+
+↓
+
+RBAC-controlled API
+
+The next integration stage is:
+
+SensorReading
+
+↓
+
+Load SensorAIConfig
+
+↓
+
+Resolve inference engine and Sensor-specific settings
+
+↓
+
+Load configured history window
+
+↓
+
+Inference
+
+↓
+
+Prediction
+
+↓
+
+Sensor-specific risk evaluation
+
+↓
+
+Alert
+
+↓
+
+Notification
+
+At this stage, SensorAIConfig is fully persisted and managed but has not yet replaced the existing runtime AI defaults.
