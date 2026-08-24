@@ -12,6 +12,9 @@ class InferenceResult:
 
 
 class InferenceEngine(Protocol):
+    model_name: str
+    model_version: str
+
     def infer(
         self,
         current_value: float,

@@ -21,5 +21,14 @@ class SensorReading(Base):
         nullable=False,
     )
 
-    sensor: Mapped["Sensor"] = relationship(back_populates="readings")
-    predictions: Mapped[list["Prediction"]] = relationship(back_populates="source_reading")
+    sensor: Mapped["Sensor"] = relationship(
+        back_populates="readings"
+    )
+
+    predictions: Mapped[list["Prediction"]] = relationship(
+        back_populates="source_reading"
+    )
+
+    ai_processing_states: Mapped[list["AIProcessingState"]] = relationship(
+        back_populates="source_reading"
+    )

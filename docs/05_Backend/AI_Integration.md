@@ -3585,3 +3585,21 @@ Database concurrency protection
 The same persisted industrial event can therefore be safely retried without producing duplicate AI Predictions, operational Alerts, or Alert Notifications.
 
 This establishes the first robust retry-safe processing foundation for future background workers, message queues, distributed processing, and asynchronous AI execution.
+
+
+## AI Processing State and Observability
+
+FactoryPulse AI now persists the execution state of AI processing for each sensor reading.
+
+This provides operational visibility into whether a reading was processed successfully, skipped, retried, or failed.
+
+### Processing State Model
+
+AI processing state is stored separately from `SensorReading` using the `AIProcessingState` model.
+
+The relationship is:
+
+```text
+SensorReading
+    ├── Prediction(s)
+    └── AIProcessingState(s)
