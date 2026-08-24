@@ -3603,3 +3603,210 @@ The relationship is:
 SensorReading
     ├── Prediction(s)
     └── AIProcessingState(s)
+    
+    
+```
+
+## Manual AI API Conflict Handling
+
+The database-level idempotency constraints introduced for automated AI processing also affect manual API writes.
+
+Without explicit API handling, duplicate manual requests could reach PostgreSQL unique constraints and surface as unhandled `IntegrityError` exceptions.
+
+FactoryPulse AI now translates these conflicts into deterministic HTTP `409 Conflict` responses.
+
+### Prediction Conflicts
+
+Traceable Predictions are uniquely identified by:
+
+```text
+source_reading_id
++
+model_name
++
+model_version
+```
+
+A duplicate request to:
+
+```
+POST /predictions
+```
+
+for the same processing identity returns:
+
+```
+409 Conflict
+```
+
+with:
+
+```
+Prediction already exists for this source reading and model version
+```
+
+The API performs:
+
+```
+application pre-check
+        ↓
+existing Prediction?
+        ↓
+409 Conflict
+```
+
+while the PostgreSQL unique constraint remains the final concurrency protection.
+
+The endpoint also catches `IntegrityError` so two concurrent requests cannot expose an internal database error.
+
+Manual Predictions with:
+
+```
+source_reading_id = NULL
+```
+
+remain allowed because they do not represent automated processing of a persisted SensorReading.
+
+### Alert Conflicts
+
+Only one Alert may reference a given Prediction.
+
+A second request to:
+
+```
+POST /alerts
+```
+
+using an already-linked `prediction_id` returns:
+
+```
+409 Conflict
+```
+
+with:
+
+```
+Alert already exists for this prediction
+```
+
+Manual Alerts with:
+
+```
+prediction_id = NULL
+```
+
+remain unaffected.
+
+### Notification Conflicts
+
+Alert-linked Notifications are uniquely identified by:
+
+```
+user_id
++
+alert_id
++
+channel
+```
+
+A duplicate request to:
+
+```
+POST /notifications
+```
+
+for the same user, alert, and channel returns:
+
+```
+409 Conflict
+```
+
+with:
+
+```
+Notification already exists for this user, alert, and channel
+```
+
+Notifications without an Alert remain unaffected by this identity rule.
+
+### Race-Safe API Behavior
+
+The conflict strategy intentionally uses two layers:
+
+```
+API pre-check
+    ↓
+clean duplicate detection
+
+Database UNIQUE constraint
+    ↓
+concurrency protection
+```
+
+The API still catches PostgreSQL `IntegrityError` because an application-level pre-check alone cannot protect against simultaneous requests.
+
+This prevents uniqueness violations from becoming:
+
+```
+500 Internal Server Error
+```
+
+and instead exposes a stable domain-level response:
+
+```
+409 Conflict
+```
+
+### Automated Pipeline Behavior
+
+These changes do not replace or alter the retry-safe automated AI pipeline.
+
+Automated processing continues to use idempotent services for:
+
+```
+SensorReading
+    ↓
+Prediction
+    ↓
+Alert
+    ↓
+Notification
+```
+
+while manual REST creation uses conflict semantics.
+
+This distinction preserves the intended behavior:
+
+```
+Automated retry
+→ reuse existing resources safely
+
+Manual duplicate POST
+→ reject with 409 Conflict
+```
+
+### Automated Tests
+
+Dedicated tests verify:
+
+- duplicate traced Prediction creation returns HTTP `409`;
+- duplicate Alert creation for the same Prediction returns HTTP `409`;
+- duplicate Notification creation for the same user, Alert, and channel returns HTTP `409`;
+- the conflict paths do not expose PostgreSQL integrity errors.
+
+The complete backend test suite currently passes:
+
+```
+63 passed
+```
+
+````
+
+## Step 890 — Stage only this hardening checkpoint
+
+From:
+
+```text
+C:\Projects\FactoryPulse-AI\backend
+````
+

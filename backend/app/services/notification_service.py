@@ -147,3 +147,20 @@ async def create_notifications(
     )
 
     return list(result.scalars().all())
+
+
+async def get_notification_by_user_alert_channel(
+    db: AsyncSession,
+    user_id: int,
+    alert_id: int,
+    channel: str,
+) -> Notification | None:
+    result = await db.execute(
+        select(Notification).where(
+            Notification.user_id == user_id,
+            Notification.alert_id == alert_id,
+            Notification.channel == channel,
+        )
+    )
+
+    return result.scalar_one_or_none()

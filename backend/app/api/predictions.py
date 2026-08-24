@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import require_roles
 from app.core.rbac import ALL_ROLES, TECHNICAL_WRITE_ROLES
@@ -9,6 +10,7 @@ from app.schemas.prediction import PredictionCreate, PredictionResponse
 from app.services.prediction_service import (
     create_prediction,
     get_prediction_by_id,
+    get_prediction_by_source_and_model,
     get_predictions,
     get_predictions_by_sensor,
 )
@@ -60,10 +62,37 @@ async def create_prediction_endpoint(
                 detail="Source reading does not belong to the selected sensor",
             )
 
-    return await create_prediction(
-        db,
-        prediction_data,
-    )
+        existing_prediction = await get_prediction_by_source_and_model(
+            db,
+            source_reading_id=prediction_data.source_reading_id,
+            model_name=prediction_data.model_name,
+            model_version=prediction_data.model_version,
+        )
+
+        if existing_prediction is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Prediction already exists for this source reading "
+                    "and model version"
+                ),
+            )
+
+    try:
+        return await create_prediction(
+            db,
+            prediction_data,
+        )
+    except IntegrityError:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Prediction already exists for this source reading "
+                "and model version"
+            ),
+        )
 
 
 @router.get(

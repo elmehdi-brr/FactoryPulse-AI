@@ -1,3 +1,4 @@
+import jwt
 import pytest
 from httpx import AsyncClient
 
@@ -402,4 +403,195 @@ async def test_ai_processing_states_returns_404_for_missing_reading(
 
     assert response.json() == {
         "detail": "Sensor reading not found"
+    }
+
+async def test_duplicate_manual_prediction_returns_409(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    sensor_id = await create_processing_state_test_sensor(
+        client,
+        auth_headers["admin"],
+    )
+
+    reading_response = await client.post(
+        "/sensor-readings",
+        headers=auth_headers["admin"],
+        json={
+            "sensor_id": sensor_id,
+            "value": 50.0,
+        },
+    )
+
+    assert reading_response.status_code == 201
+
+    reading_id = reading_response.json()["id"]
+
+    predictions_response = await client.get(
+        f"/sensors/{sensor_id}/predictions",
+        headers=auth_headers["admin"],
+    )
+
+    assert predictions_response.status_code == 200
+
+    predictions = predictions_response.json()
+
+    prediction = next(
+        item
+        for item in predictions
+        if item["source_reading_id"] == reading_id
+        and item["model_name"] == "statistical-zscore"
+        and item["model_version"] == "1.0"
+    )
+
+    duplicate_response = await client.post(
+        "/predictions",
+        headers=auth_headers["admin"],
+        json={
+            "sensor_id": prediction["sensor_id"],
+            "source_reading_id": prediction["source_reading_id"],
+            "predicted_value": prediction["predicted_value"],
+            "anomaly_score": prediction["anomaly_score"],
+            "is_anomaly": prediction["is_anomaly"],
+            "model_name": prediction["model_name"],
+            "model_version": prediction["model_version"],
+        },
+    )
+
+    assert duplicate_response.status_code == 409
+
+    assert duplicate_response.json() == {
+        "detail": (
+            "Prediction already exists for this source reading "
+            "and model version"
+        )
+    }
+
+
+async def test_duplicate_manual_alert_for_prediction_returns_409(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    sensor_id = await create_processing_state_test_sensor(
+        client,
+        auth_headers["admin"],
+    )
+
+    prediction_response = await client.post(
+        "/predictions",
+        headers=auth_headers["admin"],
+        json={
+            "sensor_id": sensor_id,
+            "source_reading_id": None,
+            "predicted_value": 75.0,
+            "anomaly_score": 6.0,
+            "is_anomaly": True,
+            "model_name": "manual-alert-test",
+            "model_version": "1.0",
+        },
+    )
+
+    assert prediction_response.status_code == 201
+
+    prediction_id = prediction_response.json()["id"]
+
+    alert_payload = {
+        "sensor_id": sensor_id,
+        "prediction_id": prediction_id,
+        "severity": "high",
+        "title": "Manual Prediction Alert",
+        "message": "Manual alert conflict test",
+        "status": "open",
+    }
+
+    first_response = await client.post(
+        "/alerts",
+        headers=auth_headers["admin"],
+        json=alert_payload,
+    )
+
+    assert first_response.status_code == 201
+
+    duplicate_response = await client.post(
+        "/alerts",
+        headers=auth_headers["admin"],
+        json=alert_payload,
+    )
+
+    assert duplicate_response.status_code == 409
+
+    assert duplicate_response.json() == {
+        "detail": "Alert already exists for this prediction"
+    }
+
+
+async def test_duplicate_manual_notification_returns_409(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    sensor_id = await create_processing_state_test_sensor(
+        client,
+        auth_headers["admin"],
+    )
+
+    alert_response = await client.post(
+        "/alerts",
+        headers=auth_headers["admin"],
+        json={
+            "sensor_id": sensor_id,
+            "prediction_id": None,
+            "severity": "medium",
+            "title": "Notification Conflict Alert",
+            "message": "Alert used for notification conflict testing",
+            "status": "open",
+        },
+    )
+
+    assert alert_response.status_code == 201
+
+    alert_id = alert_response.json()["id"]
+
+    authorization = auth_headers["admin"]["Authorization"]
+
+    token = authorization.split(" ", 1)[1]
+
+    payload = jwt.decode(
+        token,
+        options={
+            "verify_signature": False,
+        },
+    )
+
+    admin_user_id = int(payload["sub"])
+
+    notification_payload = {
+        "user_id": admin_user_id,
+        "alert_id": alert_id,
+        "title": "Manual Notification",
+        "message": "Manual notification conflict test",
+        "channel": "in_app",
+        "is_read": False,
+    }
+
+    first_response = await client.post(
+        "/notifications",
+        headers=auth_headers["admin"],
+        json=notification_payload,
+    )
+
+    assert first_response.status_code == 201
+
+    duplicate_response = await client.post(
+        "/notifications",
+        headers=auth_headers["admin"],
+        json=notification_payload,
+    )
+
+    assert duplicate_response.status_code == 409
+
+    assert duplicate_response.json() == {
+        "detail": (
+            "Notification already exists for this user, "
+            "alert, and channel"
+        )
     }

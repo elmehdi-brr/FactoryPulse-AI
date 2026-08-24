@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import require_roles
 from app.core.rbac import ALL_ROLES, TECHNICAL_WRITE_ROLES
@@ -9,6 +10,7 @@ from app.schemas.alert import AlertCreate, AlertResponse, AlertUpdate
 from app.services.alert_service import (
     create_alert,
     get_alert_by_id,
+    get_alert_by_prediction_id,
     get_alerts,
     get_alerts_by_sensor,
     update_alert,
@@ -58,7 +60,29 @@ async def create_alert_endpoint(
                 detail="Prediction does not belong to the specified sensor",
             )
 
-    return await create_alert(db, alert_data)
+        existing_alert = await get_alert_by_prediction_id(
+            db,
+            alert_data.prediction_id,
+        )
+
+        if existing_alert is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Alert already exists for this prediction",
+            )
+
+    try:
+        return await create_alert(
+            db,
+            alert_data,
+        )
+    except IntegrityError:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Alert already exists for this prediction",
+        )
 
 
 @router.get(
