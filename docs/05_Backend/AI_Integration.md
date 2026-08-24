@@ -2360,3 +2360,541 @@ Alert
 Notification
 
 At this stage, SensorAIConfig is fully persisted and managed but has not yet replaced the existing runtime AI defaults.
+
+
+---
+
+## Sensor-Specific AI Runtime Integration
+
+FactoryPulse now uses Sensor-specific AI configuration during the real SensorReading automation workflow.
+
+Previously, every Sensor used the same globally defined AI behavior.
+
+The runtime now resolves AI settings individually for each Sensor.
+
+The operational flow is:
+
+SensorReading
+
+↓
+
+Resolve Sensor AI settings
+
+↓
+
+Check AI enablement
+
+↓
+
+Build configured inference engine
+
+↓
+
+Load configured historical window
+
+↓
+
+Inference
+
+↓
+
+Prediction
+
+↓
+
+Build configured risk evaluator
+
+↓
+
+Alert
+
+↓
+
+Notification
+
+---
+
+## Runtime AI Settings
+
+Implemented in:
+
+`backend/app/ai/settings.py`
+
+The runtime configuration is represented by:
+
+`AISettings`
+
+It contains:
+
+- `is_enabled`
+- `engine_name`
+- `anomaly_threshold`
+- `min_history`
+- `history_limit`
+- `high_risk_threshold`
+- `critical_risk_threshold`
+
+FactoryPulse also defines:
+
+`DEFAULT_AI_SETTINGS`
+
+with:
+
+- AI enabled: `true`
+- engine: `statistical-zscore`
+- anomaly threshold: `3.0`
+- minimum history: `10`
+- history limit: `50`
+- high risk threshold: `5.0`
+- critical risk threshold: `8.0`
+
+These defaults preserve the behavior that existed before Sensor-specific configuration was introduced.
+
+---
+
+## Runtime Configuration Resolution
+
+Implemented through:
+
+`resolve_sensor_ai_settings()`
+
+The runtime first searches for a SensorAIConfig associated with the current Sensor.
+
+If a configuration exists:
+
+Sensor
+
+↓
+
+SensorAIConfig
+
+↓
+
+AISettings
+
+If no configuration exists:
+
+Sensor
+
+↓
+
+DEFAULT_AI_SETTINGS
+
+This preserves backward compatibility for existing Sensors and avoids requiring configuration rows to be created for every Sensor.
+
+---
+
+## Inference Engine Construction
+
+The runtime now uses:
+
+`build_inference_engine()`
+
+The current supported engine is:
+
+`statistical-zscore`
+
+The Sensor configuration controls:
+
+- anomaly threshold
+- minimum history
+
+For example:
+
+`anomaly_threshold = 2.0`
+
+and:
+
+`min_history = 5`
+
+produce a StatisticalZScoreEngine configured specifically for that Sensor.
+
+Unsupported inference engines raise an explicit error.
+
+The architecture therefore provides a clean extension point for future engines such as:
+
+- XGBoost
+- Isolation Forest
+- Autoencoders
+- forecasting-based anomaly detection
+
+without coupling SensorReading ingestion directly to a specific implementation.
+
+---
+
+## Configurable Historical Window
+
+The Sensor-specific:
+
+`history_limit`
+
+is now used by the SensorReading automation service.
+
+FactoryPulse loads only the configured number of previous readings before inference.
+
+Example:
+
+`history_limit = 3`
+
+means the AI engine receives only the three most recent historical readings.
+
+Older SensorReadings remain stored in PostgreSQL but do not participate in that inference operation.
+
+---
+
+## Runtime AI Enablement
+
+The Sensor configuration field:
+
+`is_enabled`
+
+now controls actual AI automation.
+
+When:
+
+`is_enabled = true`
+
+the workflow is:
+
+SensorReading
+
+↓
+
+Prediction
+
+↓
+
+Risk Evaluation
+
+↓
+
+Possible Alert
+
+↓
+
+Possible Notification
+
+When:
+
+`is_enabled = false`
+
+the incoming SensorReading is still persisted.
+
+However FactoryPulse skips:
+
+- Prediction generation
+- anomaly classification
+- Alert generation
+- Notification generation
+
+The behavior becomes:
+
+SensorReading ✅
+
+Prediction ❌
+
+Alert ❌
+
+Notification ❌
+
+This allows AI automation to be disabled for individual Sensors without disabling telemetry ingestion.
+
+---
+
+## Sensor-Specific Risk Evaluation
+
+FactoryPulse now builds an AnomalyRiskEvaluator using the current Sensor's configuration.
+
+The runtime uses:
+
+`build_risk_evaluator()`
+
+with:
+
+- `high_risk_threshold`
+- `critical_risk_threshold`
+
+Therefore two Sensors can receive the same anomaly score but classify its operational severity differently.
+
+Example:
+
+Anomaly score:
+
+`2.83`
+
+Sensor A:
+
+`high_risk_threshold = 2.5`
+
+Result:
+
+`HIGH`
+
+Sensor B:
+
+`high_risk_threshold = 3.0`
+
+Result:
+
+`MEDIUM`
+
+This allows Alert severity to reflect the operational sensitivity of different industrial assets.
+
+---
+
+## Updated AI Automation Service
+
+Implemented in:
+
+`backend/app/services/ai_automation_service.py`
+
+`process_sensor_reading()`
+
+now performs:
+
+1. Resolve Sensor AI settings
+2. Check `is_enabled`
+3. Build the configured inference engine
+4. Use the configured history limit
+5. Run inference
+6. Persist the Prediction
+7. Build the configured risk evaluator
+8. Generate an Alert when appropriate
+9. Continue into Notification automation
+
+The method still allows optional dependency injection of:
+
+`engine`
+
+and:
+
+`history_limit`
+
+for testing and future internal processing.
+
+Normal SensorReading API ingestion does not pass these manually and therefore uses the Sensor-specific configuration automatically.
+
+---
+
+## Runtime Configuration Tests
+
+Implemented in:
+
+`tests/test_sensor_ai_runtime_config.py`
+
+Four dedicated integration tests verify the runtime behavior.
+
+### Sensor-Specific Anomaly Threshold
+
+Two Sensors receive identical historical values:
+
+`48, 49, 50, 51, 52`
+
+and the same new reading:
+
+`54`
+
+The calculated anomaly score is approximately:
+
+`2.83`
+
+Sensor A uses:
+
+`anomaly_threshold = 3.0`
+
+Result:
+
+`is_anomaly = false`
+
+No Alert is generated.
+
+Sensor B uses:
+
+`anomaly_threshold = 2.0`
+
+Result:
+
+`is_anomaly = true`
+
+An Alert is generated.
+
+This proves SensorAIConfig directly influences inference decisions.
+
+### AI Disablement
+
+A Sensor configured with:
+
+`is_enabled = false`
+
+still accepts and stores SensorReadings.
+
+However no:
+
+- Prediction
+- Alert
+- Notification
+
+is generated.
+
+### Sensor-Specific Risk Thresholds
+
+Two Sensors receive the same anomaly score.
+
+Different risk thresholds result in different Alert severity classifications.
+
+This proves risk evaluation is also controlled per Sensor.
+
+### Configured History Window
+
+A Sensor configured with:
+
+`history_limit = 3`
+
+uses only its three most recent historical readings during inference.
+
+Older readings are excluded from the inference window.
+
+---
+
+## Current Automated Test Status
+
+Previous backend total:
+
+`46 passed`
+
+New runtime configuration tests:
+
+`4 passed`
+
+Current backend total:
+
+`50 passed`
+
+All previous functionality continues passing.
+
+This includes:
+
+- authentication and RBAC
+- industrial hierarchy
+- Prediction traceability
+- statistical anomaly inference
+- automatic Prediction generation
+- automatic Alert generation
+- automatic Notification generation
+- Sensor AI configuration API
+- Sensor-specific runtime AI behavior
+
+---
+
+## Manual Swagger Runtime Verification
+
+The Sensor-specific runtime behavior was also verified manually through FastAPI Swagger.
+
+Two fresh Sensors were created with identical:
+
+- Sensor type
+- historical readings
+- test reading
+- risk thresholds
+
+The only difference was their anomaly threshold.
+
+Strict Sensor:
+
+`anomaly_threshold = 3.0`
+
+Sensitive Sensor:
+
+`anomaly_threshold = 2.0`
+
+Both Sensors received:
+
+`48, 49, 50, 51, 52`
+
+followed by:
+
+`54`
+
+Both produced approximately the same anomaly score:
+
+`2.83`
+
+The Strict Sensor classified the reading as normal because:
+
+`2.83 < 3.0`
+
+No Alert was generated.
+
+The Sensitive Sensor classified the same reading as anomalous because:
+
+`2.83 >= 2.0`
+
+An AI Alert was generated.
+
+This manually confirms that Sensor-specific configuration controls real inference behavior.
+
+---
+
+## Manual AI Disablement Verification
+
+A separate Sensor was configured with:
+
+`is_enabled = false`
+
+A reading with:
+
+`value = 999`
+
+was submitted.
+
+The SensorReading was successfully persisted.
+
+Subsequent checks confirmed:
+
+SensorReading ✅
+
+Prediction ❌
+
+Alert ❌
+
+This verifies that AI automation can be disabled independently from telemetry ingestion.
+
+---
+
+## Current AI Runtime Architecture
+
+FactoryPulse now supports:
+
+SensorReading
+
+↓
+
+Sensor-specific AI settings
+
+↓
+
+Configured inference engine
+
+↓
+
+Configured history window
+
+↓
+
+Prediction
+
+↓
+
+Configured risk evaluator
+
+↓
+
+Alert
+
+↓
+
+Notification
+
+Each Sensor can therefore have its own anomaly sensitivity and operational risk behavior while remaining part of the same FactoryPulse platform.
+
+This completes the first Sensor-specific configurable AI runtime foundation.

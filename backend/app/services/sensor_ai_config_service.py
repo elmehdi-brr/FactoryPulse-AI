@@ -2,6 +2,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.settings import AISettings, DEFAULT_AI_SETTINGS
 from app.models.sensor_ai_config import SensorAIConfig
 from app.schemas.sensor_ai_config import (
     SensorAIConfigCreate,
@@ -98,3 +99,25 @@ async def update_sensor_ai_config(
     await db.refresh(config)
 
     return config
+
+async def resolve_sensor_ai_settings(
+    db: AsyncSession,
+    sensor_id: int,
+) -> AISettings:
+    config = await get_sensor_ai_config_by_sensor_id(
+        db,
+        sensor_id,
+    )
+
+    if config is None:
+        return DEFAULT_AI_SETTINGS
+
+    return AISettings(
+        is_enabled=config.is_enabled,
+        engine_name=config.engine_name,
+        anomaly_threshold=config.anomaly_threshold,
+        min_history=config.min_history,
+        history_limit=config.history_limit,
+        high_risk_threshold=config.high_risk_threshold,
+        critical_risk_threshold=config.critical_risk_threshold,
+    )
