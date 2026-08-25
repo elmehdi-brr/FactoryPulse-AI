@@ -46,3 +46,7 @@ class ProductionLine(Base):
     machines: Mapped[list["Machine"]] = relationship(
         back_populates="production_line"
     )
+    production_runs: Mapped[list["ProductionRun"]] = relationship(
+        back_populates="production_line",
+        cascade="all, delete-orphan",
+    )
