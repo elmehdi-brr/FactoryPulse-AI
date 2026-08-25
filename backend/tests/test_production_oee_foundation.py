@@ -746,3 +746,260 @@ async def test_downtime_cannot_end_after_production_run(
             "the production run ended"
         )
     }
+
+async def test_open_downtime_event_can_be_closed(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    create_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["operator"],
+        json={
+            "production_run_id": production_run["id"],
+            "machine_id": hierarchy["machine_id"],
+            "category": "unplanned",
+            "reason": "Bearing failure",
+            "started_at": "2026-08-25T10:00:00Z",
+            "ended_at": None,
+        },
+    )
+
+    assert create_response.status_code == 201
+
+    downtime_event_id = create_response.json()["id"]
+
+    close_response = await client.patch(
+        f"/downtime-events/{downtime_event_id}",
+        headers=auth_headers["operator"],
+        json={
+            "ended_at": "2026-08-25T10:20:00Z",
+        },
+    )
+
+    assert close_response.status_code == 200
+
+    closed_event = close_response.json()
+
+    assert closed_event["ended_at"] is not None
+    assert closed_event["reason"] == "Bearing failure"
+
+
+async def test_closed_downtime_event_cannot_be_modified(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    create_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["operator"],
+        json={
+            "production_run_id": production_run["id"],
+            "machine_id": hierarchy["machine_id"],
+            "category": "unplanned",
+            "reason": "Electrical fault",
+            "started_at": "2026-08-25T11:00:00Z",
+            "ended_at": None,
+        },
+    )
+
+    assert create_response.status_code == 201
+
+    downtime_event_id = create_response.json()["id"]
+
+    close_response = await client.patch(
+        f"/downtime-events/{downtime_event_id}",
+        headers=auth_headers["operator"],
+        json={
+            "ended_at": "2026-08-25T11:15:00Z",
+        },
+    )
+
+    assert close_response.status_code == 200
+
+    response = await client.patch(
+        f"/downtime-events/{downtime_event_id}",
+        headers=auth_headers["operator"],
+        json={
+            "notes": "Attempted historical modification",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": "Closed downtime events cannot be modified"
+    }
+
+
+async def test_production_run_cannot_complete_with_open_downtime(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    downtime_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["operator"],
+        json={
+            "production_run_id": production_run["id"],
+            "machine_id": hierarchy["machine_id"],
+            "category": "unplanned",
+            "reason": "Open machine failure",
+            "started_at": "2026-08-25T14:00:00Z",
+            "ended_at": None,
+        },
+    )
+
+    assert downtime_response.status_code == 201
+
+    response = await client.patch(
+        f"/production-runs/{production_run['id']}",
+        headers=auth_headers["admin"],
+        json={
+            "status": "completed",
+            "ended_at": "2026-08-25T16:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run cannot end while "
+            "downtime events are still open"
+        )
+    }
+
+
+async def test_production_run_can_complete_after_downtime_is_closed(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    downtime_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["operator"],
+        json={
+            "production_run_id": production_run["id"],
+            "machine_id": hierarchy["machine_id"],
+            "category": "unplanned",
+            "reason": "Short machine stop",
+            "started_at": "2026-08-25T12:00:00Z",
+            "ended_at": None,
+        },
+    )
+
+    assert downtime_response.status_code == 201
+
+    downtime_event_id = downtime_response.json()["id"]
+
+    close_response = await client.patch(
+        f"/downtime-events/{downtime_event_id}",
+        headers=auth_headers["operator"],
+        json={
+            "ended_at": "2026-08-25T12:20:00Z",
+        },
+    )
+
+    assert close_response.status_code == 200
+
+    completion_response = await client.patch(
+        f"/production-runs/{production_run['id']}",
+        headers=auth_headers["admin"],
+        json={
+            "status": "completed",
+            "ended_at": "2026-08-25T16:00:00Z",
+        },
+    )
+
+    assert completion_response.status_code == 200
+    assert completion_response.json()["status"] == "completed"
+
+
+async def test_production_run_cannot_end_before_closed_downtime(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    downtime_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["operator"],
+        json={
+            "production_run_id": production_run["id"],
+            "machine_id": hierarchy["machine_id"],
+            "category": "unplanned",
+            "reason": "Late machine stop",
+            "started_at": "2026-08-25T15:50:00Z",
+            "ended_at": "2026-08-25T16:15:00Z",
+        },
+    )
+
+    assert downtime_response.status_code == 201
+
+    response = await client.patch(
+        f"/production-runs/{production_run['id']}",
+        headers=auth_headers["admin"],
+        json={
+            "status": "completed",
+            "ended_at": "2026-08-25T16:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run cannot end before "
+            "its downtime events"
+        )
+    }
