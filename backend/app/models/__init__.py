@@ -13,6 +13,8 @@ from .area import Area
 from .production_line import ProductionLine
 from .sensor_ai_config import SensorAIConfig
 from .ai_processing_state import AIProcessingState
+from .production_run import ProductionRun
+from .downtime_event import DowntimeEvent
 
 __all__ = [
     "Alert",
@@ -30,4 +32,6 @@ __all__ = [
     "ProductionLine",
     "SensorAIConfig",
     "AIProcessingState",
+    "ProductionRun",
+    "DowntimeEvent",
 ]

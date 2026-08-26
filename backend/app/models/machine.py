@@ -66,3 +66,7 @@ class Machine(Base):
     maintenance_records: Mapped[list["MaintenanceRecord"]] = relationship(
         back_populates="machine"
     )
+
+    downtime_events: Mapped[list["DowntimeEvent"]] = relationship(
+        back_populates="machine"
+    )
