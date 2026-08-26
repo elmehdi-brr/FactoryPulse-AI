@@ -1243,3 +1243,430 @@ async def test_oee_rejects_cancelled_production_run(
             "completed production runs"
         )
     }
+
+
+
+async def create_completed_line_analytics_run(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    production_line_id: int,
+    *,
+    started_at: str,
+    ended_at: str,
+    ideal_cycle_time_seconds: float,
+    total_quantity: int,
+    good_quantity: int,
+) -> dict:
+    response = await client.post(
+        "/production-runs",
+        headers=admin_headers,
+        json={
+            "production_line_id": production_line_id,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "status": "completed",
+            "target_quantity": None,
+            "total_quantity": total_quantity,
+            "good_quantity": good_quantity,
+            "reject_quantity": (
+                total_quantity - good_quantity
+            ),
+            "ideal_cycle_time_seconds": (
+                ideal_cycle_time_seconds
+            ),
+        },
+    )
+
+    assert response.status_code == 201
+
+    return response.json()
+
+
+async def test_get_production_line_aggregated_oee(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T09:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=180,
+        good_quantity=180,
+    )
+
+    second_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        ideal_cycle_time_seconds=20.0,
+        total_quantity=180,
+        good_quantity=90,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert metrics["production_line_id"] == line_id
+    assert metrics["start_at"] is None
+    assert metrics["end_at"] is None
+
+    assert metrics["run_count"] == 2
+
+    assert metrics["scheduled_time_seconds"] == pytest.approx(
+        18000
+    )
+
+    assert metrics["planned_downtime_seconds"] == 0
+    assert metrics["planned_production_time_seconds"] == pytest.approx(
+        18000
+    )
+
+    assert metrics["unplanned_downtime_seconds"] == 0
+    assert metrics["operating_time_seconds"] == pytest.approx(
+        18000
+    )
+
+    assert metrics["total_quantity"] == 360
+    assert metrics["good_quantity"] == 270
+
+    assert metrics["availability"] == pytest.approx(
+        1.0
+    )
+
+    # Run 1 ideal production time:
+    # 10 seconds × 180 units = 1800 seconds
+    #
+    # Run 2 ideal production time:
+    # 20 seconds × 180 units = 3600 seconds
+    #
+    # Aggregated ideal production time = 5400 seconds.
+    assert metrics["performance"] == pytest.approx(
+        5400 / 18000
+    )
+
+    assert metrics["quality"] == pytest.approx(
+        270 / 360
+    )
+
+    assert metrics["oee"] == pytest.approx(
+        1.0
+        * (5400 / 18000)
+        * (270 / 360)
+    )
+
+    first_oee_response = await client.get(
+        f"/production-runs/{first_run['id']}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    second_oee_response = await client.get(
+        f"/production-runs/{second_run['id']}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert first_oee_response.status_code == 200
+    assert second_oee_response.status_code == 200
+
+    naive_average = (
+        first_oee_response.json()["oee"]
+        + second_oee_response.json()["oee"]
+    ) / 2
+
+    assert metrics["oee"] != pytest.approx(
+        naive_average
+    )
+
+
+async def test_line_oee_excludes_running_and_cancelled_runs(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    running_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-21T08:00:00Z",
+            "status": "running",
+            "total_quantity": 200,
+            "good_quantity": 190,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert running_response.status_code == 201
+
+    cancelled_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-22T08:00:00Z",
+            "ended_at": "2026-08-22T09:00:00Z",
+            "status": "cancelled",
+            "total_quantity": 100,
+            "good_quantity": 90,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert cancelled_response.status_code == 201
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert metrics["run_count"] == 1
+    assert metrics["total_quantity"] == 500
+    assert metrics["good_quantity"] == 450
+
+
+async def test_line_oee_filters_completed_runs_by_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=100,
+        good_quantity=90,
+    )
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        ideal_cycle_time_seconds=20.0,
+        total_quantity=200,
+        good_quantity=180,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-21T00:00:00Z",
+            "end_at": "2026-08-22T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert metrics["run_count"] == 1
+
+    assert metrics["total_quantity"] == 200
+    assert metrics["good_quantity"] == 180
+
+    assert metrics["start_at"] is not None
+    assert metrics["end_at"] is not None
+
+
+@pytest.mark.parametrize(
+    "role_name",
+    [
+        "admin",
+        "manager",
+        "technician",
+        "operator",
+    ],
+)
+async def test_all_roles_can_read_production_line_oee(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers[role_name],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run_count"] == 1
+
+
+async def test_line_oee_returns_404_for_missing_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/production-lines/999999/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Production line not found"
+    }
+
+
+async def test_line_oee_returns_422_when_no_completed_runs_exist(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/production-lines/"
+            f"{hierarchy['production_line_id']}/oee"
+        ),
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "No completed production runs found "
+            "for the selected period"
+        )
+    }
+
+
+async def test_line_oee_returns_422_for_empty_selected_period(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-09-01T00:00:00Z",
+            "end_at": "2026-09-02T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "No completed production runs found "
+            "for the selected period"
+        )
+    }
+
+
+async def test_line_oee_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/production-lines/"
+            f"{hierarchy['production_line_id']}/oee"
+        ),
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-22T00:00:00Z",
+            "end_at": "2026-08-21T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": "end_at must be later than start_at"
+    }
