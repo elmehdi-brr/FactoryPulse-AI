@@ -1670,3 +1670,413 @@ async def test_line_oee_rejects_invalid_date_range(
     assert response.json() == {
         "detail": "end_at must be later than start_at"
     }
+
+
+async def create_line_analytics_downtime(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    production_run_id: int,
+    *,
+    reason: str,
+    category: str,
+    started_at: str,
+    ended_at: str,
+    machine_id: int | None = None,
+) -> dict:
+    response = await client.post(
+        "/downtime-events",
+        headers=admin_headers,
+        json={
+            "production_run_id": production_run_id,
+            "machine_id": machine_id,
+            "category": category,
+            "reason": reason,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "notes": None,
+        },
+    )
+
+    assert response.status_code == 201
+
+    return response.json()
+
+
+async def test_get_production_line_downtime_analytics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T09:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason=" motor failure ",
+        category="unplanned",
+        started_at="2026-08-20T09:30:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Changeover",
+        category="planned",
+        started_at="2026-08-20T08:30:00Z",
+        ended_at="2026-08-20T09:30:00Z",
+        machine_id=None,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["production_line_id"] == line_id
+    assert data["start_at"] is None
+    assert data["end_at"] is None
+
+    assert data["run_count"] == 1
+    assert data["event_count"] == 3
+
+    # Recorded event duration:
+    #
+    # Motor failure 1 = 3600 sec
+    # Motor failure 2 = 1800 sec
+    # Changeover      = 3600 sec
+    #
+    # Total = 9000 sec.
+    #
+    # The Changeover overlaps the first Motor Failure,
+    # but Pareto analytics intentionally keeps recorded
+    # event duration rather than merging intervals.
+    assert data["recorded_downtime_seconds"] == pytest.approx(
+        9000
+    )
+
+    assert data["planned_downtime_seconds"] == pytest.approx(
+        3600
+    )
+
+    assert data["unplanned_downtime_seconds"] == pytest.approx(
+        5400
+    )
+
+    assert len(data["by_reason"]) == 2
+
+    motor_failure = data["by_reason"][0]
+
+    assert motor_failure["reason"] == "Motor Failure"
+    assert motor_failure["event_count"] == 2
+    assert motor_failure["duration_seconds"] == pytest.approx(
+        5400
+    )
+    assert motor_failure["percentage"] == pytest.approx(
+        5400 / 9000
+    )
+
+    changeover = data["by_reason"][1]
+
+    assert changeover["reason"] == "Changeover"
+    assert changeover["event_count"] == 1
+    assert changeover["duration_seconds"] == pytest.approx(
+        3600
+    )
+    assert changeover["percentage"] == pytest.approx(
+        3600 / 9000
+    )
+
+    assert len(data["by_machine"]) == 2
+
+    machine_breakdown = data["by_machine"][0]
+
+    assert machine_breakdown["machine_id"] == machine_id
+    assert machine_breakdown["event_count"] == 2
+    assert machine_breakdown[
+        "duration_seconds"
+    ] == pytest.approx(
+        5400
+    )
+    assert machine_breakdown["percentage"] == pytest.approx(
+        5400 / 9000
+    )
+
+    line_wide_breakdown = data["by_machine"][1]
+
+    assert line_wide_breakdown["machine_id"] is None
+    assert line_wide_breakdown["event_count"] == 1
+    assert line_wide_breakdown[
+        "duration_seconds"
+    ] == pytest.approx(
+        3600
+    )
+
+
+async def test_line_downtime_analytics_supports_zero_downtime(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["run_count"] == 1
+    assert data["event_count"] == 0
+
+    assert data["recorded_downtime_seconds"] == 0.0
+    assert data["planned_downtime_seconds"] == 0.0
+    assert data["unplanned_downtime_seconds"] == 0.0
+
+    assert data["by_reason"] == []
+    assert data["by_machine"] == []
+
+
+async def test_line_downtime_analytics_filters_by_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=300,
+        good_quantity=280,
+    )
+
+    second_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=470,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        first_run["id"],
+        reason="Old Failure",
+        category="unplanned",
+        started_at="2026-08-20T08:30:00Z",
+        ended_at="2026-08-20T09:30:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        second_run["id"],
+        reason="Selected Failure",
+        category="unplanned",
+        started_at="2026-08-21T09:00:00Z",
+        ended_at="2026-08-21T11:00:00Z",
+        machine_id=machine_id,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-21T00:00:00Z",
+            "end_at": "2026-08-22T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["run_count"] == 1
+    assert data["event_count"] == 1
+
+    assert data["recorded_downtime_seconds"] == pytest.approx(
+        7200
+    )
+
+    assert len(data["by_reason"]) == 1
+    assert data["by_reason"][0]["reason"] == "Selected Failure"
+
+    assert data["start_at"] is not None
+    assert data["end_at"] is not None
+
+
+@pytest.mark.parametrize(
+    "role_name",
+    [
+        "admin",
+        "manager",
+        "technician",
+        "operator",
+    ],
+)
+async def test_all_roles_can_read_line_downtime_analytics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers[role_name],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run_count"] == 1
+
+
+async def test_line_downtime_analytics_returns_404_for_missing_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/production-lines/999999/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Production line not found"
+    }
+
+
+async def test_line_downtime_analytics_requires_completed_runs(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "No completed production runs found "
+            "for the selected period"
+        )
+    }
+
+
+async def test_line_downtime_analytics_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-22T00:00:00Z",
+            "end_at": "2026-08-21T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": "end_at must be later than start_at"
+    }

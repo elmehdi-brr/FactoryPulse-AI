@@ -28,6 +28,13 @@ from app.services.production_analytics_service import (
     ProductionAnalyticsServiceError,
     calculate_production_line_oee,
 )
+from app.schemas.downtime_analytics import (
+    ProductionLineDowntimeAnalyticsResponse,
+)
+from app.services.downtime_analytics_service import (
+    DowntimeAnalyticsServiceError,
+    calculate_production_line_downtime_analytics,
+)
 
 
 router = APIRouter(
@@ -225,6 +232,83 @@ async def update_production_line_endpoint(
         db,
         production_line,
         line_data,
+    )
+
+
+@router.get(
+    "/{production_line_id}/downtime-analytics",
+    response_model=ProductionLineDowntimeAnalyticsResponse,
+)
+async def get_production_line_downtime_analytics_endpoint(
+    production_line_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> ProductionLineDowntimeAnalyticsResponse:
+    production_line = await get_production_line_by_id(
+        db,
+        production_line_id,
+    )
+
+    if production_line is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Production line not found",
+        )
+
+    try:
+        result = (
+            await calculate_production_line_downtime_analytics(
+                db,
+                production_line_id,
+                start_at=start_at,
+                end_at=end_at,
+            )
+        )
+    except DowntimeAnalyticsServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    metrics = result.metrics
+
+    return ProductionLineDowntimeAnalyticsResponse(
+        production_line_id=production_line_id,
+        start_at=start_at,
+        end_at=end_at,
+        run_count=result.run_count,
+        event_count=metrics.event_count,
+        recorded_downtime_seconds=(
+            metrics.recorded_downtime_seconds
+        ),
+        planned_downtime_seconds=(
+            metrics.planned_downtime_seconds
+        ),
+        unplanned_downtime_seconds=(
+            metrics.unplanned_downtime_seconds
+        ),
+        by_reason=[
+            {
+                "reason": item.reason,
+                "event_count": item.event_count,
+                "duration_seconds": item.duration_seconds,
+                "percentage": item.percentage,
+            }
+            for item in metrics.by_reason
+        ],
+        by_machine=[
+            {
+                "machine_id": item.machine_id,
+                "event_count": item.event_count,
+                "duration_seconds": item.duration_seconds,
+                "percentage": item.percentage,
+            }
+            for item in metrics.by_machine
+        ],
     )
 
 
