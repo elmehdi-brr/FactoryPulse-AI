@@ -10,6 +10,7 @@ from app.schemas.production_run import (
     ProductionRunResponse,
     ProductionRunUpdate,
 )
+from app.schemas.oee import OEEResponse
 from app.services.production_line_service import (
     get_production_line_by_id,
 )
@@ -20,6 +21,10 @@ from app.services.production_run_service import (
     get_production_runs,
     get_production_runs_by_line,
     update_production_run,
+)
+from app.services.oee_service import (
+    OEEServiceError,
+    calculate_production_run_oee,
 )
 
 
@@ -93,6 +98,63 @@ async def get_production_run_endpoint(
         )
 
     return production_run
+
+
+@router.get(
+    "/production-runs/{production_run_id}/oee",
+    response_model=OEEResponse,
+)
+async def get_production_run_oee_endpoint(
+    production_run_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> OEEResponse:
+    production_run = await get_production_run_by_id(
+        db,
+        production_run_id,
+    )
+
+    if production_run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Production run not found",
+        )
+
+    try:
+        metrics = await calculate_production_run_oee(
+            db,
+            production_run,
+        )
+    except OEEServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return OEEResponse(
+        production_run_id=production_run.id,
+        scheduled_time_seconds=(
+            metrics.scheduled_time_seconds
+        ),
+        planned_downtime_seconds=(
+            metrics.planned_downtime_seconds
+        ),
+        planned_production_time_seconds=(
+            metrics.planned_production_time_seconds
+        ),
+        unplanned_downtime_seconds=(
+            metrics.unplanned_downtime_seconds
+        ),
+        operating_time_seconds=(
+            metrics.operating_time_seconds
+        ),
+        availability=metrics.availability,
+        performance=metrics.performance,
+        quality=metrics.quality,
+        oee=metrics.oee,
+    )
 
 
 @router.patch(

@@ -1003,3 +1003,243 @@ async def test_production_run_cannot_end_before_closed_downtime(
             "its downtime events"
         )
     }
+
+async def create_completed_oee_test_run(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> dict:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    planned_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["operator"],
+        json={
+            "production_run_id": production_run["id"],
+            "machine_id": None,
+            "category": "planned",
+            "reason": "Scheduled changeover",
+            "started_at": "2026-08-25T09:00:00Z",
+            "ended_at": "2026-08-25T09:30:00Z",
+        },
+    )
+
+    assert planned_response.status_code == 201
+
+    unplanned_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["operator"],
+        json={
+            "production_run_id": production_run["id"],
+            "machine_id": hierarchy["machine_id"],
+            "category": "unplanned",
+            "reason": "Machine failure",
+            "started_at": "2026-08-25T13:00:00Z",
+            "ended_at": "2026-08-25T13:45:00Z",
+        },
+    )
+
+    assert unplanned_response.status_code == 201
+
+    completion_response = await client.patch(
+        f"/production-runs/{production_run['id']}",
+        headers=auth_headers["admin"],
+        json={
+            "status": "completed",
+            "ended_at": "2026-08-25T16:00:00Z",
+            "total_quantity": 1000,
+            "good_quantity": 950,
+            "reject_quantity": 50,
+            "ideal_cycle_time_seconds": 20.0,
+        },
+    )
+
+    assert completion_response.status_code == 200
+
+    return completion_response.json()
+
+
+async def test_get_production_run_oee(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    production_run = await create_completed_oee_test_run(
+        client,
+        auth_headers,
+    )
+
+    response = await client.get(
+        f"/production-runs/{production_run['id']}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert metrics["production_run_id"] == production_run["id"]
+
+    assert metrics["scheduled_time_seconds"] == pytest.approx(
+        28800
+    )
+
+    assert metrics["planned_downtime_seconds"] == pytest.approx(
+        1800
+    )
+
+    assert metrics["planned_production_time_seconds"] == pytest.approx(
+        27000
+    )
+
+    assert metrics["unplanned_downtime_seconds"] == pytest.approx(
+        2700
+    )
+
+    assert metrics["operating_time_seconds"] == pytest.approx(
+        24300
+    )
+
+    assert metrics["availability"] == pytest.approx(
+        24300 / 27000
+    )
+
+    assert metrics["performance"] == pytest.approx(
+        20000 / 24300
+    )
+
+    assert metrics["quality"] == pytest.approx(
+        0.95
+    )
+
+    assert metrics["oee"] == pytest.approx(
+        (24300 / 27000)
+        * (20000 / 24300)
+        * 0.95
+    )
+
+
+@pytest.mark.parametrize(
+    "role_name",
+    [
+        "admin",
+        "manager",
+        "technician",
+        "operator",
+    ],
+)
+async def test_all_roles_can_read_oee(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+) -> None:
+    production_run = await create_completed_oee_test_run(
+        client,
+        auth_headers,
+    )
+
+    response = await client.get(
+        f"/production-runs/{production_run['id']}/oee",
+        headers=auth_headers[role_name],
+    )
+
+    assert response.status_code == 200
+
+    assert (
+        response.json()["production_run_id"]
+        == production_run["id"]
+    )
+
+
+async def test_oee_returns_404_for_missing_production_run(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/production-runs/999999/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Production run not found"
+    }
+
+
+async def test_oee_rejects_running_production_run(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    response = await client.get(
+        f"/production-runs/{production_run['id']}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "OEE can only be calculated for "
+            "completed production runs"
+        )
+    }
+
+
+async def test_oee_rejects_cancelled_production_run(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_test_production_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+    )
+
+    cancellation_response = await client.patch(
+        f"/production-runs/{production_run['id']}",
+        headers=auth_headers["admin"],
+        json={
+            "status": "cancelled",
+            "ended_at": "2026-08-25T12:00:00Z",
+        },
+    )
+
+    assert cancellation_response.status_code == 200
+
+    response = await client.get(
+        f"/production-runs/{production_run['id']}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "OEE can only be calculated for "
+            "completed production runs"
+        )
+    }
