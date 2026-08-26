@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 from app.api.dependencies import require_roles
 from app.core.rbac import ALL_ROLES, MANAGEMENT_ROLES
@@ -9,6 +10,9 @@ from app.schemas.production_line import (
     ProductionLineCreate,
     ProductionLineResponse,
     ProductionLineUpdate,
+)
+from app.schemas.production_analytics import (
+    ProductionLineOEEResponse,
 )
 from app.schemas.machine import MachineResponse
 from app.services.area_service import get_area_by_id
@@ -20,6 +24,17 @@ from app.services.production_line_service import (
     update_production_line,
 )
 from app.services.machine_service import get_machines_by_production_line
+from app.services.production_analytics_service import (
+    ProductionAnalyticsServiceError,
+    calculate_production_line_oee,
+)
+from app.schemas.downtime_analytics import (
+    ProductionLineDowntimeAnalyticsResponse,
+)
+from app.services.downtime_analytics_service import (
+    DowntimeAnalyticsServiceError,
+    calculate_production_line_downtime_analytics,
+)
 
 
 router = APIRouter(
@@ -99,6 +114,71 @@ async def get_production_line_endpoint(
 
     return production_line
 
+@router.get(
+    "/{production_line_id}/oee",
+    response_model=ProductionLineOEEResponse,
+)
+async def get_production_line_oee_endpoint(
+    production_line_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> ProductionLineOEEResponse:
+    production_line = await get_production_line_by_id(
+        db,
+        production_line_id,
+    )
+
+    if production_line is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Production line not found",
+        )
+
+    try:
+        metrics = await calculate_production_line_oee(
+            db,
+            production_line_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+    except ProductionAnalyticsServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return ProductionLineOEEResponse(
+        production_line_id=production_line_id,
+        start_at=start_at,
+        end_at=end_at,
+        run_count=metrics.run_count,
+        scheduled_time_seconds=(
+            metrics.scheduled_time_seconds
+        ),
+        planned_downtime_seconds=(
+            metrics.planned_downtime_seconds
+        ),
+        planned_production_time_seconds=(
+            metrics.planned_production_time_seconds
+        ),
+        unplanned_downtime_seconds=(
+            metrics.unplanned_downtime_seconds
+        ),
+        operating_time_seconds=(
+            metrics.operating_time_seconds
+        ),
+        total_quantity=metrics.total_quantity,
+        good_quantity=metrics.good_quantity,
+        availability=metrics.availability,
+        performance=metrics.performance,
+        quality=metrics.quality,
+        oee=metrics.oee,
+    )
+
 
 @router.patch(
     "/{production_line_id}",
@@ -152,6 +232,83 @@ async def update_production_line_endpoint(
         db,
         production_line,
         line_data,
+    )
+
+
+@router.get(
+    "/{production_line_id}/downtime-analytics",
+    response_model=ProductionLineDowntimeAnalyticsResponse,
+)
+async def get_production_line_downtime_analytics_endpoint(
+    production_line_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> ProductionLineDowntimeAnalyticsResponse:
+    production_line = await get_production_line_by_id(
+        db,
+        production_line_id,
+    )
+
+    if production_line is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Production line not found",
+        )
+
+    try:
+        result = (
+            await calculate_production_line_downtime_analytics(
+                db,
+                production_line_id,
+                start_at=start_at,
+                end_at=end_at,
+            )
+        )
+    except DowntimeAnalyticsServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    metrics = result.metrics
+
+    return ProductionLineDowntimeAnalyticsResponse(
+        production_line_id=production_line_id,
+        start_at=start_at,
+        end_at=end_at,
+        run_count=result.run_count,
+        event_count=metrics.event_count,
+        recorded_downtime_seconds=(
+            metrics.recorded_downtime_seconds
+        ),
+        planned_downtime_seconds=(
+            metrics.planned_downtime_seconds
+        ),
+        unplanned_downtime_seconds=(
+            metrics.unplanned_downtime_seconds
+        ),
+        by_reason=[
+            {
+                "reason": item.reason,
+                "event_count": item.event_count,
+                "duration_seconds": item.duration_seconds,
+                "percentage": item.percentage,
+            }
+            for item in metrics.by_reason
+        ],
+        by_machine=[
+            {
+                "machine_id": item.machine_id,
+                "event_count": item.event_count,
+                "duration_seconds": item.duration_seconds,
+                "percentage": item.percentage,
+            }
+            for item in metrics.by_machine
+        ],
     )
 
 

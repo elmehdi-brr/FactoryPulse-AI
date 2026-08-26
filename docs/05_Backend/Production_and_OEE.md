@@ -1042,3 +1042,335 @@ trend analysis
 energy-per-unit metrics
 AI-assisted production insights
 ```
+
+
+## Production Analytics
+
+FactoryPulse AI extends the Production/OEE foundation with aggregated production analytics at the `ProductionLine` level.
+
+The first analytics capabilities are:
+
+- aggregated line-level OEE across multiple completed production runs;
+- optional reporting-period filtering;
+- downtime Pareto analysis by reason;
+- downtime Pareto analysis by machine;
+- planned vs unplanned downtime totals;
+- support for production periods with zero recorded downtime.
+
+### Aggregated ProductionLine OEE
+
+Endpoint:
+
+```http
+GET /production-lines/{production_line_id}/oee
+```
+
+Optional reporting-period parameters:
+
+```
+GET /production-lines/{production_line_id}/oee?start_at=...&end_at=...
+```
+
+Only completed `ProductionRun` records are included.
+
+Running and cancelled runs are excluded.
+
+When a reporting period is supplied, only completed runs fully contained within the selected interval are included.
+
+Production runs are intentionally not partially clipped at reporting boundaries because quantities such as `total_quantity` and `good_quantity` represent the entire run.
+
+### OEE Aggregation Strategy
+
+Aggregated OEE is not calculated by averaging the OEE percentages of individual production runs.
+
+Instead, FactoryPulse aggregates the underlying production facts.
+
+For all eligible runs:
+
+- scheduled time is summed;
+- planned downtime is summed;
+- planned production time is summed;
+- unplanned downtime is summed;
+- operating time is summed;
+- total quantity is summed;
+- good quantity is summed;
+- ideal production time is calculated as the sum of:
+
+```
+ideal_cycle_time_seconds × total_quantity
+```
+
+The aggregate factors are then recalculated:
+
+```
+Availability =
+total operating time
+────────────────────────────
+total planned production time
+```
+
+```
+Performance =
+total ideal production time
+────────────────────────────
+total operating time
+```
+
+```
+Quality =
+total good quantity
+────────────────────
+total quantity
+```
+
+```
+OEE =
+Availability × Performance × Quality
+```
+
+This allows production runs with different durations, quantities, and ideal cycle times to be combined correctly.
+
+Performance is intentionally not capped at `1.0`.
+
+Values greater than `1.0` can expose incorrect ideal-cycle configuration or inconsistent production data.
+
+### Production Analytics Domain Layer
+
+Pure aggregation logic is implemented in:
+
+```
+app/production/analytics.py
+```
+
+Important domain types include:
+
+```
+RunOEEContribution
+AggregatedOEEMetrics
+ProductionAnalyticsError
+```
+
+The pure analytics layer is independent from SQLAlchemy and FastAPI.
+
+### Production Analytics Service Layer
+
+Database-backed aggregation is implemented in:
+
+```
+app/services/production_analytics_service.py
+```
+
+The service:
+
+1. selects eligible completed runs for a ProductionLine;
+2. applies the optional reporting period;
+3. calculates each run's OEE using the existing trusted run-level OEE service;
+4. builds `RunOEEContribution` objects;
+5. passes those contributions to the pure aggregation engine.
+
+A completed run without `ideal_cycle_time_seconds` is rejected for aggregated OEE rather than silently producing an incomplete KPI.
+
+### Downtime Analytics
+
+Endpoint:
+
+```
+GET /production-lines/{production_line_id}/downtime-analytics
+```
+
+Optional reporting-period parameters:
+
+```
+GET /production-lines/{production_line_id}/downtime-analytics?start_at=...&end_at=...
+```
+
+Downtime analytics uses the downtime events belonging to eligible completed production runs.
+
+The response contains:
+
+- number of production runs;
+- number of downtime events;
+- recorded downtime duration;
+- planned downtime duration;
+- unplanned downtime duration;
+- Pareto breakdown by reason;
+- Pareto breakdown by machine.
+
+### Downtime Pareto by Reason
+
+Downtime reasons are grouped case-insensitively.
+
+For example:
+
+```
+Motor Failure
+motor failure
+ MOTOR FAILURE
+```
+
+are treated as the same reason.
+
+Blank reasons are represented as:
+
+```
+Unspecified
+```
+
+Reason groups are ordered by descending recorded duration.
+
+Each group contains:
+
+- reason;
+- event count;
+- duration in seconds;
+- percentage of total recorded event downtime.
+
+### Downtime Pareto by Machine
+
+Downtime is also aggregated by `machine_id`.
+
+Each machine group contains:
+
+- machine ID;
+- event count;
+- duration in seconds;
+- percentage of total recorded event downtime.
+
+A `machine_id` value of `null` represents a line-wide downtime event rather than a machine-specific incident.
+
+### Recorded Downtime vs OEE Downtime
+
+Downtime Pareto and OEE intentionally use different interval semantics.
+
+OEE measures actual elapsed production loss.
+
+Overlapping downtime intervals are merged before calculating OEE so the same elapsed time is never counted twice.
+
+Pareto analytics measures recorded event attribution.
+
+For example:
+
+```
+Motor Failure      10:00 → 10:30 = 30 min
+Electrical Fault   10:15 → 10:45 = 30 min
+```
+
+Actual elapsed line downtime is:
+
+```
+45 minutes
+```
+
+but recorded event downtime used for Pareto attribution is:
+
+```
+60 minutes
+```
+
+This allows FactoryPulse to represent the contribution of individual recorded causes without changing the trusted elapsed-time semantics used by OEE.
+
+### Zero-Downtime Reporting
+
+A ProductionLine can have completed production runs with no recorded downtime.
+
+This is a valid analytics result.
+
+In this case the downtime analytics endpoint returns:
+
+```
+event_count = 0
+recorded_downtime_seconds = 0
+planned_downtime_seconds = 0
+unplanned_downtime_seconds = 0
+by_reason = []
+by_machine = []
+```
+
+This is different from a reporting period containing no completed production runs.
+
+If no completed production runs exist for the selected period, the analytics request returns a validation error.
+
+### Analytics RBAC
+
+Production analytics are read-only reporting endpoints.
+
+The following roles can read both line-level OEE and downtime analytics:
+
+- admin;
+- manager;
+- technician;
+- operator.
+
+Existing write permissions remain unchanged.
+
+### Current Production Analytics Architecture
+
+```
+ProductionLine
+      │
+      ├── ProductionRun
+      │       │
+      │       └── DowntimeEvent
+      │
+      ├── Aggregated OEE
+      │       │
+      │       ├── completed runs
+      │       ├── run-level OEE engine
+      │       └── weighted aggregate metrics
+      │
+      └── Downtime Analytics
+              │
+              ├── recorded event duration
+              ├── planned / unplanned totals
+              ├── Pareto by reason
+              └── Pareto by machine
+```
+
+### Production Analytics Testing
+
+The backend test suite currently contains:
+
+```
+144 passing tests
+```
+
+Production analytics testing covers:
+
+- weighted line-level OEE;
+- different ideal cycle times;
+- zero production;
+- zero operating time;
+- uncapped performance;
+- completed-run filtering;
+- exclusion of running and cancelled runs;
+- reporting-period filtering;
+- downtime reason aggregation;
+- case-insensitive reason grouping;
+- machine aggregation;
+- line-wide downtime;
+- overlapping event semantics;
+- zero-downtime reporting;
+- analytics RBAC;
+- missing resources;
+- invalid reporting periods;
+- periods containing no completed production runs.
+
+### Future Production Analytics
+
+The current analytics foundation can be extended with:
+
+- cumulative downtime Pareto;
+- top-loss dashboards;
+- MTBF;
+- MTTR;
+- machine reliability metrics;
+- shift-level analytics;
+- production target attainment;
+- throughput trends;
+- site-level OEE;
+- area-level OEE;
+- cross-line comparisons;
+- energy-to-production correlation;
+- quality-loss analytics;
+- predictive production insights.
+

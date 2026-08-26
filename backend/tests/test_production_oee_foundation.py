@@ -1243,3 +1243,840 @@ async def test_oee_rejects_cancelled_production_run(
             "completed production runs"
         )
     }
+
+
+
+async def create_completed_line_analytics_run(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    production_line_id: int,
+    *,
+    started_at: str,
+    ended_at: str,
+    ideal_cycle_time_seconds: float,
+    total_quantity: int,
+    good_quantity: int,
+) -> dict:
+    response = await client.post(
+        "/production-runs",
+        headers=admin_headers,
+        json={
+            "production_line_id": production_line_id,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "status": "completed",
+            "target_quantity": None,
+            "total_quantity": total_quantity,
+            "good_quantity": good_quantity,
+            "reject_quantity": (
+                total_quantity - good_quantity
+            ),
+            "ideal_cycle_time_seconds": (
+                ideal_cycle_time_seconds
+            ),
+        },
+    )
+
+    assert response.status_code == 201
+
+    return response.json()
+
+
+async def test_get_production_line_aggregated_oee(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T09:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=180,
+        good_quantity=180,
+    )
+
+    second_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        ideal_cycle_time_seconds=20.0,
+        total_quantity=180,
+        good_quantity=90,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert metrics["production_line_id"] == line_id
+    assert metrics["start_at"] is None
+    assert metrics["end_at"] is None
+
+    assert metrics["run_count"] == 2
+
+    assert metrics["scheduled_time_seconds"] == pytest.approx(
+        18000
+    )
+
+    assert metrics["planned_downtime_seconds"] == 0
+    assert metrics["planned_production_time_seconds"] == pytest.approx(
+        18000
+    )
+
+    assert metrics["unplanned_downtime_seconds"] == 0
+    assert metrics["operating_time_seconds"] == pytest.approx(
+        18000
+    )
+
+    assert metrics["total_quantity"] == 360
+    assert metrics["good_quantity"] == 270
+
+    assert metrics["availability"] == pytest.approx(
+        1.0
+    )
+
+    # Run 1 ideal production time:
+    # 10 seconds × 180 units = 1800 seconds
+    #
+    # Run 2 ideal production time:
+    # 20 seconds × 180 units = 3600 seconds
+    #
+    # Aggregated ideal production time = 5400 seconds.
+    assert metrics["performance"] == pytest.approx(
+        5400 / 18000
+    )
+
+    assert metrics["quality"] == pytest.approx(
+        270 / 360
+    )
+
+    assert metrics["oee"] == pytest.approx(
+        1.0
+        * (5400 / 18000)
+        * (270 / 360)
+    )
+
+    first_oee_response = await client.get(
+        f"/production-runs/{first_run['id']}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    second_oee_response = await client.get(
+        f"/production-runs/{second_run['id']}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert first_oee_response.status_code == 200
+    assert second_oee_response.status_code == 200
+
+    naive_average = (
+        first_oee_response.json()["oee"]
+        + second_oee_response.json()["oee"]
+    ) / 2
+
+    assert metrics["oee"] != pytest.approx(
+        naive_average
+    )
+
+
+async def test_line_oee_excludes_running_and_cancelled_runs(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    running_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-21T08:00:00Z",
+            "status": "running",
+            "total_quantity": 200,
+            "good_quantity": 190,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert running_response.status_code == 201
+
+    cancelled_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-22T08:00:00Z",
+            "ended_at": "2026-08-22T09:00:00Z",
+            "status": "cancelled",
+            "total_quantity": 100,
+            "good_quantity": 90,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert cancelled_response.status_code == 201
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert metrics["run_count"] == 1
+    assert metrics["total_quantity"] == 500
+    assert metrics["good_quantity"] == 450
+
+
+async def test_line_oee_filters_completed_runs_by_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=100,
+        good_quantity=90,
+    )
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        ideal_cycle_time_seconds=20.0,
+        total_quantity=200,
+        good_quantity=180,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-21T00:00:00Z",
+            "end_at": "2026-08-22T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+
+    metrics = response.json()
+
+    assert metrics["run_count"] == 1
+
+    assert metrics["total_quantity"] == 200
+    assert metrics["good_quantity"] == 180
+
+    assert metrics["start_at"] is not None
+    assert metrics["end_at"] is not None
+
+
+@pytest.mark.parametrize(
+    "role_name",
+    [
+        "admin",
+        "manager",
+        "technician",
+        "operator",
+    ],
+)
+async def test_all_roles_can_read_production_line_oee(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers[role_name],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run_count"] == 1
+
+
+async def test_line_oee_returns_404_for_missing_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/production-lines/999999/oee",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Production line not found"
+    }
+
+
+async def test_line_oee_returns_422_when_no_completed_runs_exist(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/production-lines/"
+            f"{hierarchy['production_line_id']}/oee"
+        ),
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "No completed production runs found "
+            "for the selected period"
+        )
+    }
+
+
+async def test_line_oee_returns_422_for_empty_selected_period(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/oee",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-09-01T00:00:00Z",
+            "end_at": "2026-09-02T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "No completed production runs found "
+            "for the selected period"
+        )
+    }
+
+
+async def test_line_oee_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/production-lines/"
+            f"{hierarchy['production_line_id']}/oee"
+        ),
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-22T00:00:00Z",
+            "end_at": "2026-08-21T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": "end_at must be later than start_at"
+    }
+
+
+async def create_line_analytics_downtime(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    production_run_id: int,
+    *,
+    reason: str,
+    category: str,
+    started_at: str,
+    ended_at: str,
+    machine_id: int | None = None,
+) -> dict:
+    response = await client.post(
+        "/downtime-events",
+        headers=admin_headers,
+        json={
+            "production_run_id": production_run_id,
+            "machine_id": machine_id,
+            "category": category,
+            "reason": reason,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "notes": None,
+        },
+    )
+
+    assert response.status_code == 201
+
+    return response.json()
+
+
+async def test_get_production_line_downtime_analytics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=450,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T09:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason=" motor failure ",
+        category="unplanned",
+        started_at="2026-08-20T09:30:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Changeover",
+        category="planned",
+        started_at="2026-08-20T08:30:00Z",
+        ended_at="2026-08-20T09:30:00Z",
+        machine_id=None,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["production_line_id"] == line_id
+    assert data["start_at"] is None
+    assert data["end_at"] is None
+
+    assert data["run_count"] == 1
+    assert data["event_count"] == 3
+
+    # Recorded event duration:
+    #
+    # Motor failure 1 = 3600 sec
+    # Motor failure 2 = 1800 sec
+    # Changeover      = 3600 sec
+    #
+    # Total = 9000 sec.
+    #
+    # The Changeover overlaps the first Motor Failure,
+    # but Pareto analytics intentionally keeps recorded
+    # event duration rather than merging intervals.
+    assert data["recorded_downtime_seconds"] == pytest.approx(
+        9000
+    )
+
+    assert data["planned_downtime_seconds"] == pytest.approx(
+        3600
+    )
+
+    assert data["unplanned_downtime_seconds"] == pytest.approx(
+        5400
+    )
+
+    assert len(data["by_reason"]) == 2
+
+    motor_failure = data["by_reason"][0]
+
+    assert motor_failure["reason"] == "Motor Failure"
+    assert motor_failure["event_count"] == 2
+    assert motor_failure["duration_seconds"] == pytest.approx(
+        5400
+    )
+    assert motor_failure["percentage"] == pytest.approx(
+        5400 / 9000
+    )
+
+    changeover = data["by_reason"][1]
+
+    assert changeover["reason"] == "Changeover"
+    assert changeover["event_count"] == 1
+    assert changeover["duration_seconds"] == pytest.approx(
+        3600
+    )
+    assert changeover["percentage"] == pytest.approx(
+        3600 / 9000
+    )
+
+    assert len(data["by_machine"]) == 2
+
+    machine_breakdown = data["by_machine"][0]
+
+    assert machine_breakdown["machine_id"] == machine_id
+    assert machine_breakdown["event_count"] == 2
+    assert machine_breakdown[
+        "duration_seconds"
+    ] == pytest.approx(
+        5400
+    )
+    assert machine_breakdown["percentage"] == pytest.approx(
+        5400 / 9000
+    )
+
+    line_wide_breakdown = data["by_machine"][1]
+
+    assert line_wide_breakdown["machine_id"] is None
+    assert line_wide_breakdown["event_count"] == 1
+    assert line_wide_breakdown[
+        "duration_seconds"
+    ] == pytest.approx(
+        3600
+    )
+
+
+async def test_line_downtime_analytics_supports_zero_downtime(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["run_count"] == 1
+    assert data["event_count"] == 0
+
+    assert data["recorded_downtime_seconds"] == 0.0
+    assert data["planned_downtime_seconds"] == 0.0
+    assert data["unplanned_downtime_seconds"] == 0.0
+
+    assert data["by_reason"] == []
+    assert data["by_machine"] == []
+
+
+async def test_line_downtime_analytics_filters_by_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=300,
+        good_quantity=280,
+    )
+
+    second_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=470,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        first_run["id"],
+        reason="Old Failure",
+        category="unplanned",
+        started_at="2026-08-20T08:30:00Z",
+        ended_at="2026-08-20T09:30:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        second_run["id"],
+        reason="Selected Failure",
+        category="unplanned",
+        started_at="2026-08-21T09:00:00Z",
+        ended_at="2026-08-21T11:00:00Z",
+        machine_id=machine_id,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-21T00:00:00Z",
+            "end_at": "2026-08-22T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["run_count"] == 1
+    assert data["event_count"] == 1
+
+    assert data["recorded_downtime_seconds"] == pytest.approx(
+        7200
+    )
+
+    assert len(data["by_reason"]) == 1
+    assert data["by_reason"][0]["reason"] == "Selected Failure"
+
+    assert data["start_at"] is not None
+    assert data["end_at"] is not None
+
+
+@pytest.mark.parametrize(
+    "role_name",
+    [
+        "admin",
+        "manager",
+        "technician",
+        "operator",
+    ],
+)
+async def test_all_roles_can_read_line_downtime_analytics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers[role_name],
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run_count"] == 1
+
+
+async def test_line_downtime_analytics_returns_404_for_missing_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/production-lines/999999/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Production line not found"
+    }
+
+
+async def test_line_downtime_analytics_requires_completed_runs(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "No completed production runs found "
+            "for the selected period"
+        )
+    }
+
+
+async def test_line_downtime_analytics_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    response = await client.get(
+        f"/production-lines/{line_id}/downtime-analytics",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-22T00:00:00Z",
+            "end_at": "2026-08-21T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": "end_at must be later than start_at"
+    }
