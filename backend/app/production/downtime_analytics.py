@@ -66,8 +66,13 @@ def calculate_downtime_analytics(
     events: Sequence[DowntimeAnalyticsEvent],
 ) -> DowntimeAnalyticsMetrics:
     if not events:
-        raise DowntimeAnalyticsError(
-            "At least one downtime event is required"
+        return DowntimeAnalyticsMetrics(
+            event_count=0,
+            recorded_downtime_seconds=0.0,
+            planned_downtime_seconds=0.0,
+            unplanned_downtime_seconds=0.0,
+            by_reason=(),
+            by_machine=(),
         )
 
     reason_data: dict[

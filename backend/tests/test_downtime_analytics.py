@@ -211,12 +211,17 @@ def test_blank_reason_is_grouped_as_unspecified() -> None:
     assert metrics.by_reason[0].event_count == 1
 
 
-def test_downtime_analytics_requires_events() -> None:
-    with pytest.raises(
-        DowntimeAnalyticsError,
-        match="At least one downtime event is required",
-    ):
-        calculate_downtime_analytics([])
+def test_downtime_analytics_supports_zero_downtime() -> None:
+    metrics = calculate_downtime_analytics([])
+
+    assert metrics.event_count == 0
+
+    assert metrics.recorded_downtime_seconds == 0.0
+    assert metrics.planned_downtime_seconds == 0.0
+    assert metrics.unplanned_downtime_seconds == 0.0
+
+    assert metrics.by_reason == ()
+    assert metrics.by_machine == ()
 
 
 def test_downtime_analytics_rejects_open_events() -> None:
