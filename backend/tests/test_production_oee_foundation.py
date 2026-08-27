@@ -1,5 +1,11 @@
 import pytest
 from httpx import AsyncClient
+from datetime import datetime, timezone
+
+from sqlalchemy.exc import IntegrityError
+
+from app.db.session import AsyncSessionLocal
+from app.models.production_run import ProductionRun
 
 
 async def create_production_test_hierarchy(
@@ -2223,3 +2229,146 @@ async def test_open_production_run_blocks_later_run_on_same_line(
             "on the same production line"
         )
     }
+
+
+
+async def test_database_rejects_overlapping_production_runs(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    async with AsyncSessionLocal() as db:
+        first_run = ProductionRun(
+            production_line_id=line_id,
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=500,
+            good_quantity=480,
+            reject_quantity=20,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(first_run)
+        await db.commit()
+
+        overlapping_run = ProductionRun(
+            production_line_id=line_id,
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                10,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                14,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=300,
+            good_quantity=290,
+            reject_quantity=10,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(overlapping_run)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ex_production_runs_line_time_overlap"
+        in str(exc_info.value)
+    )
+
+
+
+
+async def test_database_overlap_fallback_returns_422(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.services.production_run_service as production_run_service
+
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    async def bypass_overlap_validation(
+        *args,
+        **kwargs,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(
+        production_run_service,
+        "validate_production_run_overlap",
+        bypass_overlap_validation,
+    )
+
+    response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T10:00:00Z",
+            "ended_at": "2026-08-20T14:00:00Z",
+            "status": "completed",
+            "total_quantity": 300,
+            "good_quantity": 290,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run overlaps an existing run "
+            "on the same production line"
+        )
+    } I think PC, but mathematics I think I'm just a maybe spech on sharp forgets

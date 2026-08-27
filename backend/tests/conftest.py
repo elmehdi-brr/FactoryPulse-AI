@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -25,13 +26,26 @@ from app.models.user import User  # noqa: E402
 @pytest_asyncio.fixture(autouse=True)
 async def reset_test_database():
     async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-        await connection.run_sync(Base.metadata.create_all)
+        await connection.execute(
+            text(
+                "CREATE EXTENSION IF NOT EXISTS btree_gist"
+            )
+        )
+
+        await connection.run_sync(
+            Base.metadata.drop_all
+        )
+
+        await connection.run_sync(
+            Base.metadata.create_all
+        )
 
     yield
 
     async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
+        await connection.run_sync(
+            Base.metadata.drop_all
+        )
 
     await engine.dispose()
 

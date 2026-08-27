@@ -7,7 +7,9 @@ from sqlalchemy import (
     Integer,
     String,
     func,
+    literal_column,
 )
+from sqlalchemy.dialects.postgresql import ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -93,3 +95,28 @@ class ProductionRun(Base):
         back_populates="production_run",
         cascade="all, delete-orphan",
     )
+
+
+ProductionRun.__table__.append_constraint(
+    ExcludeConstraint(
+        (
+            ProductionRun.__table__.c.production_line_id,
+            "=",
+        ),
+        (
+            func.tstzrange(
+                ProductionRun.__table__.c.started_at,
+                func.coalesce(
+                    ProductionRun.__table__.c.ended_at,
+                    literal_column(
+                        "'infinity'::timestamptz"
+                    ),
+                ),
+                literal_column("'[)'"),
+            ),
+            "&&",
+        ),
+        name="ex_production_runs_line_time_overlap",
+        using="gist",
+    )
+)

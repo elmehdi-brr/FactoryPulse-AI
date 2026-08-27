@@ -2,6 +2,7 @@ from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError
 
 from app.models.production_run import ProductionRun
 from app.models.downtime_event import DowntimeEvent
@@ -14,6 +15,9 @@ from app.schemas.production_run import (
 class ProductionRunValidationError(ValueError):
     pass
 
+PRODUCTION_RUN_OVERLAP_CONSTRAINT = (
+    "ex_production_runs_line_time_overlap"
+)
 
 async def create_production_run(
     db: AsyncSession,
@@ -31,7 +35,23 @@ async def create_production_run(
     )
 
     db.add(production_run)
-    await db.commit()
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+
+        if (
+            PRODUCTION_RUN_OVERLAP_CONSTRAINT
+            in str(exc.orig)
+        ):
+            raise ProductionRunValidationError(
+                "Production run overlaps an existing run "
+                "on the same production line"
+            ) from exc
+
+        raise
+
     await db.refresh(production_run)
 
     return production_run
