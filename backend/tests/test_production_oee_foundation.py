@@ -7,6 +7,10 @@ from sqlalchemy.exc import IntegrityError
 from app.db.session import AsyncSessionLocal
 from app.models.production_run import ProductionRun
 from app.models.downtime_event import DowntimeEvent
+from app.services.machine_reliability_service import (
+    MachineReliabilityServiceError,
+    calculate_machine_reliability,
+)
 
 
 async def create_production_test_hierarchy(
@@ -2633,3 +2637,541 @@ async def test_database_rejects_invalid_downtime_time_order(
         "ck_downtime_events_time_order"
         in str(exc_info.value)
     )
+
+
+
+async def test_machine_reliability_service_filters_failure_events(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    completed_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    # Valid machine failure: included.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        completed_run["id"],
+        reason="Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T08:30:00Z",
+        ended_at="2026-08-20T09:00:00Z",
+        machine_id=machine_id,
+    )
+
+    # Planned downtime: excluded.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        completed_run["id"],
+        reason="Preventive Maintenance",
+        category="planned",
+        started_at="2026-08-20T09:15:00Z",
+        ended_at="2026-08-20T09:45:00Z",
+        machine_id=machine_id,
+    )
+
+    # Line-wide downtime: excluded.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        completed_run["id"],
+        reason="Material Shortage",
+        category="unplanned",
+        started_at="2026-08-20T10:00:00Z",
+        ended_at="2026-08-20T10:30:00Z",
+        machine_id=None,
+    )
+
+    # Another machine on the same production line: excluded.
+    other_machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": line_id,
+            "name": "Assembly Machine B",
+            "code": "MACHINE-B",
+            "location": "Assembly Line A",
+            "status": "active",
+        },
+    )
+
+    assert other_machine_response.status_code == 201
+
+    other_machine_id = other_machine_response.json()["id"]
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        completed_run["id"],
+        reason="Other Machine Failure",
+        category="unplanned",
+        started_at="2026-08-20T10:30:00Z",
+        ended_at="2026-08-20T11:30:00Z",
+        machine_id=other_machine_id,
+    )
+
+    # Open machine failure: excluded.
+    running_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T13:00:00Z",
+            "status": "running",
+            "total_quantity": 0,
+            "good_quantity": 0,
+            "reject_quantity": 0,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert running_response.status_code == 201
+
+    open_downtime_response = await client.post(
+        "/downtime-events",
+        headers=auth_headers["admin"],
+        json={
+            "production_run_id": running_response.json()["id"],
+            "machine_id": machine_id,
+            "category": "unplanned",
+            "reason": "Open Failure",
+            "started_at": "2026-08-20T13:30:00Z",
+            "ended_at": None,
+            "notes": None,
+        },
+    )
+
+    assert open_downtime_response.status_code == 201
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_reliability(
+            db,
+            machine_id,
+        )
+
+    assert metrics.failure_count == 1
+    assert metrics.total_failure_downtime_seconds == pytest.approx(
+        1800
+    )
+    assert metrics.mttr_seconds == pytest.approx(
+        1800
+    )
+
+
+async def test_machine_reliability_service_filters_by_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=300,
+        good_quantity=290,
+    )
+
+    second_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=400,
+        good_quantity=390,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        first_run["id"],
+        reason="Old Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        second_run["id"],
+        reason="Selected Failure",
+        category="unplanned",
+        started_at="2026-08-21T09:00:00Z",
+        ended_at="2026-08-21T11:00:00Z",
+        machine_id=machine_id,
+    )
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_reliability(
+            db,
+            machine_id,
+            start_at=datetime(
+                2026,
+                8,
+                21,
+                0,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            end_at=datetime(
+                2026,
+                8,
+                22,
+                0,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+    assert metrics.failure_count == 1
+    assert metrics.total_failure_downtime_seconds == pytest.approx(
+        7200
+    )
+    assert metrics.mttr_seconds == pytest.approx(
+        7200
+    )
+
+
+async def test_machine_reliability_service_supports_zero_failures(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_reliability(
+            db,
+            hierarchy["machine_id"],
+        )
+
+    assert metrics.failure_count == 0
+    assert metrics.total_failure_downtime_seconds == 0.0
+    assert metrics.mttr_seconds is None
+
+
+async def test_machine_reliability_service_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        with pytest.raises(
+            MachineReliabilityServiceError,
+            match="end_at must be later than start_at",
+        ):
+            await calculate_machine_reliability(
+                db,
+                hierarchy["machine_id"],
+                start_at=datetime(
+                    2026,
+                    8,
+                    22,
+                    0,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+                end_at=datetime(
+                    2026,
+                    8,
+                    21,
+                    0,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            )
+
+
+async def test_machine_reliability_api_returns_failure_metrics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T14:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=600,
+        good_quantity=580,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T09:30:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T11:00:00Z",
+        ended_at="2026-08-20T12:30:00Z",
+        machine_id=machine_id,
+    )
+
+    response = await client.get(
+        f"/machines/{machine_id}/reliability",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["machine_id"] == machine_id
+    assert data["start_at"] is None
+    assert data["end_at"] is None
+
+    assert data["failure_count"] == 2
+
+    # 30 minutes + 90 minutes = 120 minutes.
+    assert data[
+        "total_failure_downtime_seconds"
+    ] == pytest.approx(
+        7200
+    )
+
+    # MTTR = 120 minutes / 2 failures = 60 minutes.
+    assert data["mttr_seconds"] == pytest.approx(
+        3600
+    )
+
+
+async def test_machine_reliability_api_supports_zero_failures(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/machines/"
+            f"{hierarchy['machine_id']}/reliability"
+        ),
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["failure_count"] == 0
+    assert data["total_failure_downtime_seconds"] == 0.0
+    assert data["mttr_seconds"] is None
+
+
+async def test_machine_reliability_api_filters_by_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=300,
+        good_quantity=290,
+    )
+
+    second_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-21T08:00:00Z",
+        ended_at="2026-08-21T14:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        first_run["id"],
+        reason="Old Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        second_run["id"],
+        reason="Selected Failure",
+        category="unplanned",
+        started_at="2026-08-21T10:00:00Z",
+        ended_at="2026-08-21T12:00:00Z",
+        machine_id=machine_id,
+    )
+
+    response = await client.get(
+        f"/machines/{machine_id}/reliability",
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-21T00:00:00Z",
+            "end_at": "2026-08-22T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["failure_count"] == 1
+
+    assert data[
+        "total_failure_downtime_seconds"
+    ] == pytest.approx(
+        7200
+    )
+
+    assert data["mttr_seconds"] == pytest.approx(
+        7200
+    )
+
+    assert data["start_at"] is not None
+    assert data["end_at"] is not None
+
+
+@pytest.mark.parametrize(
+    "role_name",
+    [
+        "admin",
+        "manager",
+        "technician",
+        "operator",
+    ],
+)
+async def test_all_roles_can_read_machine_reliability_api(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/machines/"
+            f"{hierarchy['machine_id']}/reliability"
+        ),
+        headers=auth_headers[role_name],
+    )
+
+    assert response.status_code == 200
+
+
+async def test_machine_reliability_api_returns_404_for_missing_machine(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/machines/999999/reliability",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 404
+
+    assert response.json() == {
+        "detail": "Machine not found"
+    }
+
+
+async def test_machine_reliability_api_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/machines/"
+            f"{hierarchy['machine_id']}/reliability"
+        ),
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-22T00:00:00Z",
+            "end_at": "2026-08-21T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": "end_at must be later than start_at"
+    }
