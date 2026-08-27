@@ -1374,3 +1374,458 @@ The current analytics foundation can be extended with:
 - quality-loss analytics;
 - predictive production insights.
 
+
+
+## Production Reliability and Data Integrity
+
+FactoryPulse AI hardens the Production/OEE foundation with application-level and PostgreSQL-level integrity controls.
+
+These safeguards ensure production history remains trustworthy for OEE, downtime analytics, and future reliability metrics such as MTBF and MTTR.
+
+### ProductionRun Overlap Protection
+
+FactoryPulse assumes that a single `ProductionLine` cannot execute overlapping production runs.
+
+Production run intervals use half-open semantics:
+
+```text
+[started_at, ended_at)
+```
+
+This means two consecutive runs may touch at the boundary:
+
+```text
+Run A: 08:00 → 12:00
+Run B: 12:00 → 16:00
+```
+
+This is valid because the first run no longer occupies the line at `12:00`.
+
+An actual overlap is rejected:
+
+```text
+Run A: 08:00 → 12:00
+Run B: 10:00 → 14:00
+```
+
+### Open-Ended Running Runs
+
+A production run with:
+
+```text
+ended_at = NULL
+```
+
+is treated as an open interval extending indefinitely into the future.
+
+Conceptually:
+
+```text
+[started_at, infinity)
+```
+
+Therefore, a running production run blocks later production runs on the same line until it is completed or cancelled.
+
+### Application-Level Overlap Validation
+
+ProductionRun creation first performs a service-level overlap query.
+
+The validation is implemented in:
+
+```text
+app/services/production_run_service.py
+```
+
+If an overlap is detected before insertion, FactoryPulse raises:
+
+```text
+ProductionRunValidationError
+```
+
+with:
+
+```text
+Production run overlaps an existing run on the same production line
+```
+
+The API translates this business validation failure to:
+
+```http
+422 Unprocessable Content
+```
+
+This provides a clear client-facing error before attempting the database insert.
+
+### PostgreSQL Exclusion Constraint
+
+Application-level validation alone cannot fully prevent race conditions.
+
+For example:
+
+```text
+Request A                  Request B
+    │                          │
+overlap check → clear      overlap check → clear
+    │                          │
+insert                     insert
+```
+
+Two concurrent requests could theoretically pass the pre-check before either transaction commits.
+
+FactoryPulse therefore also enforces the rule directly in PostgreSQL using:
+
+```text
+ex_production_runs_line_time_overlap
+```
+
+The constraint uses:
+
+```text
+EXCLUDE USING gist
+```
+
+over:
+
+```text
+production_line_id WITH =
+```
+
+and:
+
+```text
+tstzrange(
+    started_at,
+    COALESCE(ended_at, 'infinity'),
+    '[)'
+) WITH &&
+```
+
+The `&&` operator rejects overlapping time ranges for the same ProductionLine.
+
+This protection applies even when data is inserted outside FastAPI.
+
+### btree_gist
+
+The exclusion constraint requires the PostgreSQL extension:
+
+```text
+btree_gist
+```
+
+because the GiST constraint combines equality comparison on:
+
+```text
+production_line_id
+```
+
+with range-overlap comparison on the production interval.
+
+The extension is created using:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+```
+
+The migration downgrade intentionally does not remove the extension because PostgreSQL extensions can be shared by other indexes or constraints.
+
+### Overlap Migration
+
+ProductionRun overlap enforcement is introduced by Alembic revision:
+
+```text
+9965bd5ba936
+```
+
+which revises:
+
+```text
+58633c31421f
+```
+
+The migration:
+
+- enables `btree_gist` when necessary;
+- adds the ProductionRun GiST exclusion constraint;
+- supports open-ended production runs using PostgreSQL `infinity`;
+- uses half-open `[start, end)` interval semantics;
+- removes only the exclusion constraint during downgrade.
+
+The migration upgrade, downgrade, and re-upgrade paths were verified successfully.
+
+### Concurrency Integrity Fallback
+
+The service still performs the overlap pre-check for friendly validation.
+
+However, PostgreSQL remains the final authority.
+
+If a concurrent request passes the service check but PostgreSQL rejects the insert through:
+
+```text
+ex_production_runs_line_time_overlap
+```
+
+the service:
+
+1. catches the SQLAlchemy `IntegrityError`;
+2. rolls back the failed transaction;
+3. identifies the overlap constraint;
+4. raises the same `ProductionRunValidationError`;
+5. allows the API to return the same HTTP `422` response.
+
+Therefore both normal validation and race-condition rejection expose consistent API behavior.
+
+### ProductionRun Database CHECK Constraints
+
+FactoryPulse also protects ProductionRun data directly at the database level.
+
+The following constraints are enforced:
+
+```text
+ck_production_runs_status
+ck_production_runs_status_end_consistency
+ck_production_runs_time_order
+ck_production_runs_target_quantity_positive
+ck_production_runs_total_quantity_nonnegative
+ck_production_runs_good_quantity_nonnegative
+ck_production_runs_reject_quantity_nonnegative
+ck_production_runs_quantity_consistency
+ck_production_runs_ideal_cycle_positive
+```
+
+#### Valid Status
+
+The database allows only:
+
+```text
+running
+completed
+cancelled
+```
+
+#### Status and End-Time Consistency
+
+Running production runs require:
+
+```text
+ended_at IS NULL
+```
+
+Completed or cancelled production runs require:
+
+```text
+ended_at IS NOT NULL
+```
+
+#### Production Time Order
+
+When an end time exists:
+
+```text
+ended_at >= started_at
+```
+
+#### Target Quantity
+
+When specified:
+
+```text
+target_quantity > 0
+```
+
+#### Production Quantities
+
+The database requires:
+
+```text
+total_quantity >= 0
+good_quantity >= 0
+reject_quantity >= 0
+```
+
+and:
+
+```text
+good_quantity + reject_quantity <= total_quantity
+```
+
+#### Ideal Cycle Time
+
+When configured:
+
+```text
+ideal_cycle_time_seconds > 0
+```
+
+### DowntimeEvent Database CHECK Constraints
+
+Downtime events are protected by:
+
+```text
+ck_downtime_events_category
+ck_downtime_events_time_order
+```
+
+Valid categories are:
+
+```text
+planned
+unplanned
+```
+
+For closed downtime events:
+
+```text
+ended_at >= started_at
+```
+
+### Production Integrity Migration
+
+The ProductionRun and DowntimeEvent CHECK constraints are introduced by Alembic revision:
+
+```text
+8b9aab729277
+```
+
+which revises:
+
+```text
+9965bd5ba936
+```
+
+Before applying the migration, existing development data was audited against every new rule.
+
+All integrity checks returned:
+
+```text
+0 violations
+```
+
+The migration upgrade, downgrade, and re-upgrade paths were also verified successfully.
+
+### Production and Test Schema Consistency
+
+FactoryPulse's automated tests recreate the PostgreSQL schema using SQLAlchemy metadata.
+
+To avoid differences between the Alembic-managed development schema and the test schema, the ORM metadata declares the same:
+
+- ProductionRun exclusion constraint;
+- ProductionRun CHECK constraints;
+- DowntimeEvent CHECK constraints.
+
+The test environment also ensures:
+
+```text
+btree_gist
+```
+
+exists before `Base.metadata.create_all()` runs.
+
+This keeps:
+
+```text
+Alembic production schema
+        =
+SQLAlchemy test schema
+```
+
+for production integrity rules.
+
+### Direct Database Integrity Testing
+
+FactoryPulse includes tests that deliberately bypass:
+
+```text
+FastAPI
+Pydantic
+service validation
+```
+
+and insert ORM records directly into PostgreSQL.
+
+These tests verify that PostgreSQL itself rejects:
+
+- overlapping ProductionRuns;
+- negative production quantities;
+- inconsistent good/reject/total quantities;
+- invalid production statuses;
+- invalid downtime categories;
+- invalid downtime time ordering.
+
+This proves that production integrity does not depend exclusively on API validation.
+
+### Current Reliability Testing
+
+The backend test suite currently contains:
+
+```text
+154 passing tests
+```
+
+Reliability and integrity coverage includes:
+
+- same-line ProductionRun overlap rejection;
+- touching production-run boundaries;
+- open-ended running-run protection;
+- database-level overlap enforcement;
+- PostgreSQL race-condition fallback;
+- consistent API `422` behavior;
+- ProductionRun CHECK constraints;
+- DowntimeEvent CHECK constraints;
+- direct database integrity tests;
+- production/test schema parity;
+- migration upgrade;
+- migration downgrade;
+- migration re-upgrade.
+
+### Reliability Architecture
+
+```text
+Client / Integration
+        │
+        ▼
+FastAPI
+        │
+        ▼
+Pydantic validation
+        │
+        ▼
+Production service validation
+        │
+        ├── lifecycle rules
+        ├── hierarchy rules
+        └── overlap pre-check
+        │
+        ▼
+SQLAlchemy
+        │
+        ▼
+PostgreSQL
+        │
+        ├── foreign keys
+        ├── CHECK constraints
+        └── GiST exclusion constraint
+                │
+                ▼
+        trusted production history
+                │
+                ├── OEE
+                ├── downtime analytics
+                └── future reliability KPIs
+```
+
+### Next Reliability Milestone
+
+With production data integrity established, future machine-reliability analytics can safely build on this foundation.
+
+Planned capabilities include:
+
+- failure-event identification;
+- failure counts;
+- MTTR;
+- MTBF;
+- machine downtime trends;
+- reliability ranking;
+- failure Pareto;
+- maintenance effectiveness;
+- line-level reliability aggregation;
+- predictive failure insights.
