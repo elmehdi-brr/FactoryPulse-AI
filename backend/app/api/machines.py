@@ -166,6 +166,10 @@ async def get_machine_reliability_endpoint(
             metrics.total_failure_downtime_seconds
         ),
         mttr_seconds=metrics.mttr_seconds,
+        operating_exposure_seconds=(
+            metrics.operating_exposure_seconds
+        ),
+        mtbf_seconds=metrics.mtbf_seconds,
     )
 
 

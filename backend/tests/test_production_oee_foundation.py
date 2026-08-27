@@ -2990,6 +2990,19 @@ async def test_machine_reliability_api_returns_failure_metrics(
     assert data["mttr_seconds"] == pytest.approx(
         3600
     )
+    # Production run = 6 hours.
+    # Failure downtime = 30m + 90m = 2 hours.
+    # Operating exposure = 4 hours.
+    assert data[
+        "operating_exposure_seconds"
+    ] == pytest.approx(
+        4 * 3600
+    )
+
+    # 4 operating hours / 2 failures = 2 hours MTBF.
+    assert data["mtbf_seconds"] == pytest.approx(
+        2 * 3600
+    )
 
 
 async def test_machine_reliability_api_supports_zero_failures(
@@ -3016,6 +3029,8 @@ async def test_machine_reliability_api_supports_zero_failures(
     assert data["failure_count"] == 0
     assert data["total_failure_downtime_seconds"] == 0.0
     assert data["mttr_seconds"] is None
+    assert data["operating_exposure_seconds"] == 0.0
+    assert data["mtbf_seconds"] is None
 
 
 async def test_machine_reliability_api_filters_by_date_range(
@@ -3101,6 +3116,17 @@ async def test_machine_reliability_api_filters_by_date_range(
 
     assert data["start_at"] is not None
     assert data["end_at"] is not None
+    # Only the selected 6-hour run is included.
+    # Its failure lasts 2 hours.
+    assert data[
+        "operating_exposure_seconds"
+    ] == pytest.approx(
+        4 * 3600
+    )
+
+    assert data["mtbf_seconds"] == pytest.approx(
+        4 * 3600
+    )
 
 
 @pytest.mark.parametrize(
@@ -3175,3 +3201,229 @@ async def test_machine_reliability_api_rejects_invalid_date_range(
     assert response.json() == {
         "detail": "end_at must be later than start_at"
     }
+
+async def test_machine_reliability_service_calculates_mtbf(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T16:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=800,
+        good_quantity=780,
+    )
+
+    # Target-machine failure: 1 hour.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_id,
+    )
+
+    # Planned line-wide downtime: another 1 hour.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Changeover",
+        category="planned",
+        started_at="2026-08-20T12:00:00Z",
+        ended_at="2026-08-20T13:00:00Z",
+        machine_id=None,
+    )
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_reliability(
+            db,
+            machine_id,
+        )
+
+    assert metrics.failure_count == 1
+
+    assert metrics.total_failure_downtime_seconds == pytest.approx(
+        3600
+    )
+
+    assert metrics.mttr_seconds == pytest.approx(
+        3600
+    )
+
+    # Scheduled production exposure = 8 hours.
+    # Unique downtime = 2 hours.
+    # Operating exposure = 6 hours.
+    assert metrics.operating_exposure_seconds == pytest.approx(
+        6 * 3600
+    )
+
+    # One machine failure across 6 operating hours.
+    assert metrics.mtbf_seconds == pytest.approx(
+        6 * 3600
+    )
+
+
+async def test_machine_reliability_service_merges_overlapping_downtime_for_mtbf(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=400,
+        good_quantity=390,
+    )
+
+    # Failure: 09:00 → 10:00.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_id,
+    )
+
+    # Overlapping planned downtime: 09:30 → 10:30.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Line Inspection",
+        category="planned",
+        started_at="2026-08-20T09:30:00Z",
+        ended_at="2026-08-20T10:30:00Z",
+        machine_id=None,
+    )
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_reliability(
+            db,
+            machine_id,
+        )
+
+    assert metrics.failure_count == 1
+
+    # Recorded events total 2 hours, but unique elapsed
+    # downtime is only 1.5 hours.
+    #
+    # 4h scheduled - 1.5h unique downtime = 2.5h exposure.
+    assert metrics.operating_exposure_seconds == pytest.approx(
+        2.5 * 3600
+    )
+
+    assert metrics.mtbf_seconds == pytest.approx(
+        2.5 * 3600
+    )
+
+
+async def test_machine_reliability_service_returns_no_mtbf_without_failures(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=400,
+        good_quantity=395,
+    )
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_reliability(
+            db,
+            machine_id,
+        )
+
+    assert metrics.failure_count == 0
+
+    assert metrics.operating_exposure_seconds == pytest.approx(
+        4 * 3600
+    )
+
+    assert metrics.mttr_seconds is None
+    assert metrics.mtbf_seconds is None
+
+
+async def test_machine_reliability_api_returns_no_mtbf_for_standalone_machine(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    standalone_machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": None,
+            "name": "Standalone Utility Machine",
+            "code": "STANDALONE-MACHINE",
+            "location": "Utility Area",
+            "status": "active",
+        },
+    )
+
+    assert standalone_machine_response.status_code == 201
+
+    machine_id = standalone_machine_response.json()["id"]
+
+    response = await client.get(
+        f"/machines/{machine_id}/reliability",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["machine_id"] == machine_id
+    assert data["failure_count"] == 0
+    assert data["total_failure_downtime_seconds"] == 0.0
+    assert data["mttr_seconds"] is None
+
+    assert data["operating_exposure_seconds"] is None
+    assert data["mtbf_seconds"] is None

@@ -6,6 +6,8 @@ from app.production.reliability import (
     MachineFailureEvent,
     MachineReliabilityError,
     calculate_machine_failure_metrics,
+    ReliabilityDowntimeWindow,
+    calculate_operating_exposure_seconds,
 )
 
 
@@ -104,4 +106,138 @@ def test_machine_reliability_rejects_invalid_time_order() -> None:
                     ended_at=dt(9),
                 )
             ]
+        )
+
+
+def test_mtbf_calculation() -> None:
+    from app.production.reliability import calculate_mtbf_seconds
+
+    assert calculate_mtbf_seconds(
+        operating_time_seconds=18_000,
+        failure_count=2,
+    ) == pytest.approx(9000)
+
+
+def test_mtbf_is_none_when_no_failures() -> None:
+    from app.production.reliability import calculate_mtbf_seconds
+
+    assert calculate_mtbf_seconds(
+        operating_time_seconds=18_000,
+        failure_count=0,
+    ) is None
+
+
+def test_mtbf_rejects_negative_operating_time() -> None:
+    from app.production.reliability import calculate_mtbf_seconds
+
+    with pytest.raises(
+        MachineReliabilityError,
+        match="Operating time cannot be negative",
+    ):
+        calculate_mtbf_seconds(
+            operating_time_seconds=-1,
+            failure_count=1,
+        )
+
+
+def test_mtbf_rejects_negative_failure_count() -> None:
+    from app.production.reliability import calculate_mtbf_seconds
+
+    with pytest.raises(
+        MachineReliabilityError,
+        match="Failure count cannot be negative",
+    ):
+        calculate_mtbf_seconds(
+            operating_time_seconds=3600,
+            failure_count=-1,
+        )
+
+
+
+def test_operating_exposure_without_downtime() -> None:
+    exposure = calculate_operating_exposure_seconds(
+        started_at=dt(8),
+        ended_at=dt(12),
+        downtime_windows=[],
+    )
+
+    assert exposure == pytest.approx(
+        4 * 3600
+    )
+
+
+def test_operating_exposure_merges_overlapping_downtime() -> None:
+    exposure = calculate_operating_exposure_seconds(
+        started_at=dt(8),
+        ended_at=dt(12),
+        downtime_windows=[
+            ReliabilityDowntimeWindow(
+                started_at=dt(9),
+                ended_at=dt(10),
+            ),
+            ReliabilityDowntimeWindow(
+                started_at=dt(9, 30),
+                ended_at=dt(10, 30),
+            ),
+        ],
+    )
+
+    assert exposure == pytest.approx(
+        2.5 * 3600
+    )
+
+
+def test_operating_exposure_clips_downtime_to_run_boundaries() -> None:
+    exposure = calculate_operating_exposure_seconds(
+        started_at=dt(8),
+        ended_at=dt(12),
+        downtime_windows=[
+            ReliabilityDowntimeWindow(
+                started_at=dt(7),
+                ended_at=dt(9),
+            ),
+            ReliabilityDowntimeWindow(
+                started_at=dt(11),
+                ended_at=dt(13),
+            ),
+        ],
+    )
+
+    assert exposure == pytest.approx(
+        2 * 3600
+    )
+
+
+def test_operating_exposure_rejects_open_downtime() -> None:
+    with pytest.raises(
+        MachineReliabilityError,
+        match=(
+            "Open downtime events cannot be used "
+            "for operating exposure"
+        ),
+    ):
+        calculate_operating_exposure_seconds(
+            started_at=dt(8),
+            ended_at=dt(12),
+            downtime_windows=[
+                ReliabilityDowntimeWindow(
+                    started_at=dt(9),
+                    ended_at=None,
+                )
+            ],
+        )
+
+
+def test_operating_exposure_rejects_invalid_run_range() -> None:
+    with pytest.raises(
+        MachineReliabilityError,
+        match=(
+            "Production run ended_at must be later "
+            "than started_at"
+        ),
+    ):
+        calculate_operating_exposure_seconds(
+            started_at=dt(12),
+            ended_at=dt(8),
+            downtime_windows=[],
         )
