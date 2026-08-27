@@ -1,5 +1,12 @@
 import pytest
 from httpx import AsyncClient
+from datetime import datetime, timezone
+
+from sqlalchemy.exc import IntegrityError
+
+from app.db.session import AsyncSessionLocal
+from app.models.production_run import ProductionRun
+from app.models.downtime_event import DowntimeEvent
 
 
 async def create_production_test_hierarchy(
@@ -1422,7 +1429,7 @@ async def test_line_oee_excludes_running_and_cancelled_runs(
         headers=auth_headers["admin"],
         json={
             "production_line_id": line_id,
-            "started_at": "2026-08-21T08:00:00Z",
+            "started_at": "2026-08-22T08:00:00Z",
             "status": "running",
             "total_quantity": 200,
             "good_quantity": 190,
@@ -1438,8 +1445,8 @@ async def test_line_oee_excludes_running_and_cancelled_runs(
         headers=auth_headers["admin"],
         json={
             "production_line_id": line_id,
-            "started_at": "2026-08-22T08:00:00Z",
-            "ended_at": "2026-08-22T09:00:00Z",
+            "started_at": "2026-08-21T08:00:00Z",
+            "ended_at": "2026-08-21T09:00:00Z",
             "status": "cancelled",
             "total_quantity": 100,
             "good_quantity": 90,
@@ -2080,3 +2087,549 @@ async def test_line_downtime_analytics_rejects_invalid_date_range(
     assert response.json() == {
         "detail": "end_at must be later than start_at"
     }
+
+
+
+
+async def test_production_run_rejects_overlap_on_same_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T10:00:00Z",
+            "ended_at": "2026-08-20T14:00:00Z",
+            "status": "completed",
+            "total_quantity": 300,
+            "good_quantity": 290,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run overlaps an existing run "
+            "on the same production line"
+        )
+    }
+
+
+async def test_production_run_allows_touching_boundaries(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    second_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T12:00:00Z",
+            "ended_at": "2026-08-20T16:00:00Z",
+            "status": "completed",
+            "total_quantity": 400,
+            "good_quantity": 390,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert first_run["id"] is not None
+
+    assert second_response.status_code == 201
+
+
+async def test_open_production_run_blocks_later_run_on_same_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    running_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T08:00:00Z",
+            "status": "running",
+            "total_quantity": 0,
+            "good_quantity": 0,
+            "reject_quantity": 0,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert running_response.status_code == 201
+
+    response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-21T08:00:00Z",
+            "ended_at": "2026-08-21T12:00:00Z",
+            "status": "completed",
+            "total_quantity": 300,
+            "good_quantity": 290,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run overlaps an existing run "
+            "on the same production line"
+        )
+    }
+
+
+
+async def test_database_rejects_overlapping_production_runs(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    async with AsyncSessionLocal() as db:
+        first_run = ProductionRun(
+            production_line_id=line_id,
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=500,
+            good_quantity=480,
+            reject_quantity=20,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(first_run)
+        await db.commit()
+
+        overlapping_run = ProductionRun(
+            production_line_id=line_id,
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                10,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                14,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=300,
+            good_quantity=290,
+            reject_quantity=10,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(overlapping_run)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ex_production_runs_line_time_overlap"
+        in str(exc_info.value)
+    )
+
+
+
+
+async def test_database_overlap_fallback_returns_422(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.services.production_run_service as production_run_service
+
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    async def bypass_overlap_validation(
+        *args,
+        **kwargs,
+    ) -> None:
+        return None
+
+    monkeypatch.setattr(
+        production_run_service,
+        "validate_production_run_overlap",
+        bypass_overlap_validation,
+    )
+
+    response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T10:00:00Z",
+            "ended_at": "2026-08-20T14:00:00Z",
+            "status": "completed",
+            "total_quantity": 300,
+            "good_quantity": 290,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run overlaps an existing run "
+            "on the same production line"
+        )
+    }
+
+
+async def test_database_rejects_negative_production_quantity(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        production_run = ProductionRun(
+            production_line_id=hierarchy["production_line_id"],
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=-1,
+            good_quantity=0,
+            reject_quantity=0,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(production_run)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    error_text = str(exc_info.value)
+
+    assert "violates check constraint" in error_text
+
+    assert (
+        "ck_production_runs_total_quantity_nonnegative"
+        in error_text
+        or
+        "ck_production_runs_quantity_consistency"
+        in error_text
+    )
+
+
+async def test_database_rejects_inconsistent_production_quantities(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        production_run = ProductionRun(
+            production_line_id=hierarchy["production_line_id"],
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=100,
+            good_quantity=90,
+            reject_quantity=20,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(production_run)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ck_production_runs_quantity_consistency"
+        in str(exc_info.value)
+    )
+
+
+async def test_database_rejects_invalid_production_status(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        production_run = ProductionRun(
+            production_line_id=hierarchy["production_line_id"],
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="invalid-status",
+            total_quantity=100,
+            good_quantity=90,
+            reject_quantity=10,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(production_run)
+
+        with pytest.raises(IntegrityError):
+            await db.commit()
+
+        await db.rollback()
+
+
+async def test_database_rejects_invalid_downtime_category(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    async with AsyncSessionLocal() as db:
+        downtime_event = DowntimeEvent(
+            production_run_id=production_run["id"],
+            machine_id=hierarchy["machine_id"],
+            category="invalid-category",
+            reason="Database integrity test",
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                9,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                10,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        db.add(downtime_event)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ck_downtime_events_category"
+        in str(exc_info.value)
+    )
+
+
+async def test_database_rejects_invalid_downtime_time_order(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    async with AsyncSessionLocal() as db:
+        downtime_event = DowntimeEvent(
+            production_run_id=production_run["id"],
+            machine_id=hierarchy["machine_id"],
+            category="unplanned",
+            reason="Database integrity test",
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                10,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                9,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        db.add(downtime_event)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ck_downtime_events_time_order"
+        in str(exc_info.value)
+    )

@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -78,3 +79,21 @@ class DowntimeEvent(Base):
     machine: Mapped["Machine | None"] = relationship(
         back_populates="downtime_events"
     )
+
+
+DowntimeEvent.__table__.append_constraint(
+    CheckConstraint(
+        "category IN ('planned', 'unplanned')",
+        name="ck_downtime_events_category",
+    )
+)
+
+DowntimeEvent.__table__.append_constraint(
+    CheckConstraint(
+        """
+        ended_at IS NULL
+        OR ended_at >= started_at
+        """,
+        name="ck_downtime_events_time_order",
+    )
+)
