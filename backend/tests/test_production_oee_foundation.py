@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.db.session import AsyncSessionLocal
 from app.models.production_run import ProductionRun
+from app.models.downtime_event import DowntimeEvent
 
 
 async def create_production_test_hierarchy(
@@ -2371,4 +2372,264 @@ async def test_database_overlap_fallback_returns_422(
             "Production run overlaps an existing run "
             "on the same production line"
         )
-    } I think PC, but mathematics I think I'm just a maybe spech on sharp forgets
+    }
+
+
+async def test_database_rejects_negative_production_quantity(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        production_run = ProductionRun(
+            production_line_id=hierarchy["production_line_id"],
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=-1,
+            good_quantity=0,
+            reject_quantity=0,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(production_run)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    error_text = str(exc_info.value)
+
+    assert "violates check constraint" in error_text
+
+    assert (
+        "ck_production_runs_total_quantity_nonnegative"
+        in error_text
+        or
+        "ck_production_runs_quantity_consistency"
+        in error_text
+    )
+
+
+async def test_database_rejects_inconsistent_production_quantities(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        production_run = ProductionRun(
+            production_line_id=hierarchy["production_line_id"],
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="completed",
+            total_quantity=100,
+            good_quantity=90,
+            reject_quantity=20,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(production_run)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ck_production_runs_quantity_consistency"
+        in str(exc_info.value)
+    )
+
+
+async def test_database_rejects_invalid_production_status(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        production_run = ProductionRun(
+            production_line_id=hierarchy["production_line_id"],
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            status="invalid-status",
+            total_quantity=100,
+            good_quantity=90,
+            reject_quantity=10,
+            ideal_cycle_time_seconds=10.0,
+        )
+
+        db.add(production_run)
+
+        with pytest.raises(IntegrityError):
+            await db.commit()
+
+        await db.rollback()
+
+
+async def test_database_rejects_invalid_downtime_category(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    async with AsyncSessionLocal() as db:
+        downtime_event = DowntimeEvent(
+            production_run_id=production_run["id"],
+            machine_id=hierarchy["machine_id"],
+            category="invalid-category",
+            reason="Database integrity test",
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                9,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                10,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        db.add(downtime_event)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ck_downtime_events_category"
+        in str(exc_info.value)
+    )
+
+
+async def test_database_rejects_invalid_downtime_time_order(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        hierarchy["production_line_id"],
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    async with AsyncSessionLocal() as db:
+        downtime_event = DowntimeEvent(
+            production_run_id=production_run["id"],
+            machine_id=hierarchy["machine_id"],
+            category="unplanned",
+            reason="Database integrity test",
+            started_at=datetime(
+                2026,
+                8,
+                20,
+                10,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                20,
+                9,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        db.add(downtime_event)
+
+        with pytest.raises(IntegrityError) as exc_info:
+            await db.commit()
+
+        await db.rollback()
+
+    assert (
+        "ck_downtime_events_time_order"
+        in str(exc_info.value)
+    )
