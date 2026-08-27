@@ -1829,3 +1829,566 @@ Planned capabilities include:
 - maintenance effectiveness;
 - line-level reliability aggregation;
 - predictive failure insights.
+
+
+---
+
+## Machine Reliability Analytics
+
+### Overview
+
+FactoryPulse AI now includes machine-level reliability analytics built on top of the production and downtime domain.
+
+The first reliability implementation provides:
+
+- Machine failure counting
+- Total recorded failure downtime
+- Mean Time To Repair (MTTR)
+- Machine operating exposure
+- Mean Time Between Failures (MTBF)
+- Optional reporting-period filtering
+- Reliability API access for all authenticated roles
+- Explicit handling for standalone machines without production-runtime data
+
+The implementation is separated into three layers:
+
+1. Pure reliability calculations
+2. PostgreSQL-backed reliability service
+3. Machine reliability REST API
+
+This keeps reliability formulas independent from database and API concerns.
+
+---
+
+### Failure Definition
+
+For the current FactoryPulse domain, a machine failure is defined as a `DowntimeEvent` that satisfies all of the following:
+
+- `machine_id` references the target machine
+- `category == "unplanned"`
+- `ended_at IS NOT NULL`
+- The event belongs to a completed `ProductionRun`
+
+Therefore:
+
+- Planned downtime is not counted as a machine failure.
+- Line-wide downtime with `machine_id = NULL` is not counted as a machine failure.
+- Downtime belonging to another machine is not counted.
+- Open downtime events are not counted.
+- Failures from incomplete/running production runs are not included in reliability reporting.
+
+This definition provides a deterministic failure population for MTTR and MTBF.
+
+---
+
+### Pure Reliability Domain
+
+The pure calculation layer is implemented in:
+
+`app/production/reliability.py`
+
+Important domain objects include:
+
+- `MachineFailureEvent`
+- `MachineFailureMetrics`
+- `MachineReliabilityMetrics`
+- `ReliabilityDowntimeWindow`
+- `MachineReliabilityError`
+
+The module contains no database or FastAPI dependencies.
+
+This allows the reliability mathematics to be tested independently.
+
+---
+
+### Failure Count and Failure Downtime
+
+For a set of eligible failure events:
+
+`failure_count = number of eligible failure events`
+
+Total failure downtime is calculated as:
+
+`total_failure_downtime = Σ(failure ended_at - failure started_at)`
+
+Only closed failures are accepted by the pure calculation layer.
+
+Invalid intervals where:
+
+`ended_at < started_at`
+
+are rejected.
+
+A failure with equal start and end timestamps is valid and contributes zero seconds of downtime.
+
+---
+
+### Mean Time To Repair — MTTR
+
+MTTR represents the average recorded repair/failure duration.
+
+Formula:
+
+`MTTR = total failure downtime / failure count`
+
+Example:
+
+- Failure A: 30 minutes
+- Failure B: 90 minutes
+
+Therefore:
+
+- Failure count = 2
+- Total failure downtime = 120 minutes
+- MTTR = 60 minutes
+
+The API exposes MTTR in seconds as:
+
+`mttr_seconds`
+
+If no failures exist:
+
+`mttr_seconds = null`
+
+It is intentionally not returned as `0`, because zero would imply that repairs were instantaneous rather than that no repair observations exist.
+
+---
+
+### Machine Operating Exposure
+
+MTBF requires a measure of how long the machine was actually exposed to production operation.
+
+For machines assigned to a production line, FactoryPulse derives this exposure from completed production runs.
+
+For each eligible completed run:
+
+`operating exposure = scheduled production duration - unique elapsed downtime`
+
+Scheduled production duration is:
+
+`ProductionRun.ended_at - ProductionRun.started_at`
+
+All recorded downtime associated with the run is considered production-impacting downtime for the current domain model.
+
+This includes:
+
+- Planned downtime
+- Unplanned downtime
+- Machine-specific downtime
+- Line-wide downtime
+
+The objective is to determine how much elapsed production time remained after periods when the production line was stopped.
+
+---
+
+### Downtime Interval Merging
+
+Downtime intervals are merged before subtraction.
+
+This prevents overlapping downtime events from being counted twice.
+
+Example:
+
+Production run:
+
+`08:00 → 12:00`
+
+Downtime events:
+
+- `09:00 → 10:00`
+- `09:30 → 10:30`
+
+The recorded event durations total two hours, but the real elapsed downtime is only:
+
+`09:00 → 10:30 = 1.5 hours`
+
+Therefore:
+
+- Scheduled duration = 4 hours
+- Unique elapsed downtime = 1.5 hours
+- Operating exposure = 2.5 hours
+
+This follows the same elapsed-time principle used by FactoryPulse OEE analytics.
+
+Downtime intervals are also clipped to the production-run boundaries before being merged.
+
+---
+
+### Mean Time Between Failures — MTBF
+
+For machines associated with a production line:
+
+`MTBF = operating exposure / failure count`
+
+Example:
+
+- Completed production duration = 8 hours
+- Unique downtime = 2 hours
+- Operating exposure = 6 hours
+- Machine failures = 1
+
+Therefore:
+
+`MTBF = 6 hours`
+
+The API exposes this as:
+
+`mtbf_seconds`
+
+If the machine has production exposure but no observed failures:
+
+`mtbf_seconds = null`
+
+This avoids incorrectly representing a failure-free period as an MTBF of zero.
+
+---
+
+### Consistent Reliability Population
+
+MTBF requires both its numerator and denominator to describe the same reporting population.
+
+FactoryPulse therefore calculates both:
+
+- Operating exposure
+- Machine failures
+
+from eligible completed production runs.
+
+This prevents situations where a failure from a currently running production period is counted while operating exposure is calculated only from completed runs.
+
+---
+
+### Standalone Machines
+
+The industrial hierarchy allows machines to exist directly under an `Area` without being assigned to a `ProductionLine`.
+
+Such machines have:
+
+`production_line_id = NULL`
+
+The current FactoryPulse data model does not yet maintain a dedicated machine runtime/state timeline for these assets.
+
+Therefore a trustworthy MTBF cannot currently be derived for standalone machines.
+
+For a standalone machine, the reliability API returns:
+
+`operating_exposure_seconds = null`
+
+`mtbf_seconds = null`
+
+FactoryPulse deliberately avoids using calendar time as a substitute for machine operating time.
+
+A future machine-runtime/state subsystem can provide operating exposure for standalone assets.
+
+---
+
+### Reporting Period
+
+Machine reliability supports optional query parameters:
+
+- `start_at`
+- `end_at`
+
+Example:
+
+`GET /machines/{machine_id}/reliability?start_at=2026-08-01T00:00:00Z&end_at=2026-08-31T23:59:59Z`
+
+When both values are supplied:
+
+`end_at` must be later than `start_at`.
+
+Otherwise the API returns:
+
+`422 Unprocessable Content`
+
+with:
+
+`end_at must be later than start_at`
+
+The reliability service selects completed production runs within the requested reporting period and derives both failure metrics and operating exposure from that population.
+
+---
+
+### Reliability Service
+
+The PostgreSQL-backed orchestration layer is implemented in:
+
+`app/services/machine_reliability_service.py`
+
+Its responsibilities include:
+
+- Validating the requested reporting period
+- Loading the target machine
+- Selecting eligible machine failures
+- Restricting reliability analysis to completed production runs
+- Loading production-run downtime
+- Grouping downtime by production run
+- Calculating unique operating exposure
+- Combining failure metrics with operating exposure
+- Producing MTTR and MTBF
+- Handling standalone machines
+- Translating pure-domain errors into service-level errors
+
+The service uses SQLAlchemy's asynchronous API and the project's PostgreSQL database.
+
+---
+
+### Reliability Response Schema
+
+The response schema is implemented in:
+
+`app/schemas/machine_reliability.py`
+
+The API response contains:
+
+- `machine_id`
+- `start_at`
+- `end_at`
+- `failure_count`
+- `total_failure_downtime_seconds`
+- `mttr_seconds`
+- `operating_exposure_seconds`
+- `mtbf_seconds`
+
+Example conceptual response:
+
+```json
+{
+  "machine_id": 12,
+  "start_at": null,
+  "end_at": null,
+  "failure_count": 2,
+  "total_failure_downtime_seconds": 7200.0,
+  "mttr_seconds": 3600.0,
+  "operating_exposure_seconds": 14400.0,
+  "mtbf_seconds": 7200.0
+}
+
+```
+
+
+All duration-based reliability values are exposed in seconds so the API uses a consistent base unit.
+
+---
+
+### Machine Reliability API
+
+Reliability is exposed through:
+
+`GET /machines/{machine_id}/reliability`
+
+Optional filters:
+
+- `start_at`
+- `end_at`
+
+The endpoint first verifies that the requested machine exists.
+
+If it does not:
+
+`404 Machine not found`
+
+Invalid reporting periods return:
+
+`422 Unprocessable Content`
+
+A valid machine with no failures still returns:
+
+`200 OK`
+
+with zero failure counts and nullable MTTR/MTBF where appropriate.
+
+---
+
+### RBAC
+
+Machine reliability analytics are read-only.
+
+All authenticated FactoryPulse roles can access the endpoint:
+
+- Admin
+- Manager
+- Technician
+- Operator
+
+This follows the existing analytics-read policy based on:
+
+`ALL_ROLES`
+
+No reliability write endpoint is required because reliability metrics are derived from production and downtime records.
+
+---
+
+### Testing Strategy
+
+Machine Reliability Analytics is covered at multiple levels.
+
+#### Pure Reliability Tests
+
+File:
+
+`tests/test_machine_reliability.py`
+
+Coverage includes:
+
+- Multiple failure durations
+- Failure count
+- Total failure downtime
+- MTTR
+- Zero failures
+- Zero-duration failures
+- Open failure rejection
+- Invalid failure interval rejection
+- MTBF calculation
+- MTBF with zero failures
+- Negative operating-time rejection
+- Negative failure-count rejection
+- Operating exposure without downtime
+- Overlapping downtime merging
+- Downtime clipping to run boundaries
+- Open downtime rejection
+- Invalid production-run ranges
+
+These tests validate reliability calculations without involving PostgreSQL or FastAPI.
+
+#### PostgreSQL Service Tests
+
+The reliability service is tested against the real PostgreSQL test database.
+
+Coverage includes:
+
+- Selecting only target-machine failures
+- Excluding planned downtime from failure count
+- Excluding line-wide downtime from machine failures
+- Excluding downtime belonging to other machines
+- Excluding open failures
+- Date-range filtering
+- Zero-failure behavior
+- Invalid reporting-period rejection
+- MTBF calculation from completed production runs
+- Operating exposure calculation
+- Overlapping downtime merging
+- MTBF behavior when no failures exist
+
+The database-backed tests verify that the pure reliability engine is correctly connected to the FactoryPulse production domain.
+
+#### API Tests
+
+The machine reliability API tests cover:
+
+- Failure metrics
+- MTTR
+- Operating exposure
+- MTBF
+- Zero-failure responses
+- Reporting-period filtering
+- Admin access
+- Manager access
+- Technician access
+- Operator access
+- Missing machine handling
+- Invalid reporting-period handling
+- Standalone-machine MTBF behavior
+
+The reliability API tests use FastAPI through `httpx.AsyncClient` with the ASGI application and the real PostgreSQL test database.
+
+No browser automation or Selenium is used for these backend tests.
+
+---
+
+### Architecture
+
+The completed reliability flow is:
+
+`ProductionRun + DowntimeEvent`
+
+↓
+
+`Machine reliability service`
+
+↓
+
+`Failure selection + production exposure selection`
+
+↓
+
+`Pure reliability engine`
+
+↓
+
+`Failure Count + Failure Downtime + MTTR`
+
+↓
+
+`Operating Exposure + MTBF`
+
+↓
+
+`GET /machines/{machine_id}/reliability`
+
+This preserves separation of concerns:
+
+- Database selection belongs to the service layer.
+- Reliability mathematics belong to the pure production/reliability layer.
+- HTTP behavior belongs to the API layer.
+
+---
+
+### Current Limitations
+
+The current MTBF model intentionally has several explicit boundaries.
+
+1. MTBF is derived only from completed production runs.
+2. A machine must belong to a production line for production-run-based operating exposure to be available.
+3. Standalone machines do not yet have a machine runtime/state source.
+4. Calendar time is not used as a replacement for operating exposure.
+5. The current production model assumes downtime associated with a run represents production-impacting elapsed downtime.
+6. Predictive AI outputs are not yet used to modify MTTR or MTBF calculations.
+
+These limitations are deliberate so reliability metrics remain explainable and auditable.
+
+---
+
+### Future Reliability Extensions
+
+Possible future additions include:
+
+- Dedicated machine runtime/state history
+- Standalone-machine operating exposure
+- Failure classification and failure modes
+- Reliability trends over time
+- MTTR trend analysis
+- MTBF trend analysis
+- Failure-rate metrics
+- Availability metrics at machine level
+- Reliability comparison between machines
+- Reliability comparison between production lines
+- Maintenance effectiveness analytics
+- Preventive vs corrective maintenance analysis
+- Connection between predictions, alerts, failures, and maintenance outcomes
+- AI-assisted failure-risk scoring
+
+These can build on the current reliability foundation without changing the core metric semantics.
+
+---
+
+### Machine Reliability Analytics Status
+
+Machine Reliability Analytics backend milestone:
+
+- Failure definition ✅
+- Failure count ✅
+- Total failure downtime ✅
+- MTTR ✅
+- Operating exposure ✅
+- Overlapping downtime merging ✅
+- MTBF ✅
+- Completed-run consistency ✅
+- Reporting-period filtering ✅
+- Standalone-machine handling ✅
+- REST API ✅
+- RBAC ✅
+- Pure unit tests ✅
+- PostgreSQL integration tests ✅
+- API tests ✅
+- Full regression suite ✅
