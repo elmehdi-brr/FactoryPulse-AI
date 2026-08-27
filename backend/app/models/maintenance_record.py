@@ -1,6 +1,14 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -8,6 +16,24 @@ from app.db.base import Base
 
 class MaintenanceRecord(Base):
     __tablename__ = "maintenance_records"
+    __table_args__ = (
+        CheckConstraint(
+            "maintenance_type IN ('preventive', 'corrective')",
+            name="ck_maintenance_records_maintenance_type",
+        ),
+        CheckConstraint(
+            (
+                "status IN ("
+                "'planned', "
+                "'in_progress', "
+                "'completed', "
+                "'verified', "
+                "'cancelled'"
+                ")"
+            ),
+            name="ck_maintenance_records_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
