@@ -24,6 +24,7 @@ from app.services.maintenance_record_service import (
 from app.services.maintenance_analytics_service import (
     MaintenanceAnalyticsServiceError,
     calculate_machine_maintenance_effectiveness,
+    calculate_machine_maintenance_response,
 )
 from app.services.sensor_service import get_sensor_by_id
 from app.services.user_service import get_user_by_id
@@ -170,6 +171,13 @@ async def get_machine_maintenance_analytics_endpoint(
             start_at=start_at,
             end_at=end_at,
         )
+        response_metrics = await calculate_machine_maintenance_response(
+            db,
+            machine_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+
     except MaintenanceAnalyticsServiceError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -180,22 +188,50 @@ async def get_machine_maintenance_analytics_endpoint(
         machine_id=machine_id,
         start_at=start_at,
         end_at=end_at,
+
         total_records=metrics.total_records,
+
         preventive_count=metrics.preventive_count,
         corrective_count=metrics.corrective_count,
         preventive_share=metrics.preventive_share,
+
         planned_count=metrics.planned_count,
         in_progress_count=metrics.in_progress_count,
         completed_count=metrics.completed_count,
         verified_count=metrics.verified_count,
         cancelled_count=metrics.cancelled_count,
+
         finished_count=metrics.finished_count,
         completion_rate=metrics.completion_rate,
         verification_rate=metrics.verification_rate,
+
         alert_linked_count=metrics.alert_linked_count,
         alert_link_rate=metrics.alert_link_rate,
+
         assigned_count=metrics.assigned_count,
         assignment_rate=metrics.assignment_rate,
+
+        total_alerts=response_metrics.total_alerts,
+        responded_alert_count=(
+            response_metrics.responded_alert_count
+        ),
+        unresponded_alert_count=(
+            response_metrics.unresponded_alert_count
+        ),
+        response_rate=response_metrics.response_rate,
+
+        average_response_time_seconds=(
+            response_metrics.average_response_time_seconds
+        ),
+        median_response_time_seconds=(
+            response_metrics.median_response_time_seconds
+        ),
+        fastest_response_time_seconds=(
+            response_metrics.fastest_response_time_seconds
+        ),
+        slowest_response_time_seconds=(
+            response_metrics.slowest_response_time_seconds
+        ),
     )
 
 

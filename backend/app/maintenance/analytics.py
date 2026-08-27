@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from datetime import datetime
+from statistics import median
 from typing import Sequence
 
 
@@ -170,4 +172,92 @@ def calculate_maintenance_effectiveness(
         alert_link_rate=alert_link_rate,
         assigned_count=assigned_count,
         assignment_rate=assignment_rate,
+    )
+
+@dataclass(frozen=True, slots=True)
+class MaintenanceResponseObservation:
+    alert_created_at: datetime
+    maintenance_performed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class MaintenanceResponseMetrics:
+    total_alerts: int
+    responded_alert_count: int
+    unresponded_alert_count: int
+
+    response_rate: float | None
+
+    average_response_time_seconds: float | None
+    median_response_time_seconds: float | None
+    fastest_response_time_seconds: float | None
+    slowest_response_time_seconds: float | None
+
+
+def calculate_maintenance_response_metrics(
+    observations: Sequence[MaintenanceResponseObservation],
+) -> MaintenanceResponseMetrics:
+    response_times: list[float] = []
+
+    for observation in observations:
+        if observation.maintenance_performed_at is None:
+            continue
+
+        if (
+            observation.maintenance_performed_at
+            < observation.alert_created_at
+        ):
+            raise MaintenanceAnalyticsError(
+                "Maintenance response cannot occur "
+                "before alert creation"
+            )
+
+        response_times.append(
+            (
+                observation.maintenance_performed_at
+                - observation.alert_created_at
+            ).total_seconds()
+        )
+
+    total_alerts = len(observations)
+    responded_alert_count = len(response_times)
+    unresponded_alert_count = (
+        total_alerts - responded_alert_count
+    )
+
+    response_rate = (
+        responded_alert_count / total_alerts
+        if total_alerts
+        else None
+    )
+
+    if not response_times:
+        return MaintenanceResponseMetrics(
+            total_alerts=total_alerts,
+            responded_alert_count=0,
+            unresponded_alert_count=unresponded_alert_count,
+            response_rate=response_rate,
+            average_response_time_seconds=None,
+            median_response_time_seconds=None,
+            fastest_response_time_seconds=None,
+            slowest_response_time_seconds=None,
+        )
+
+    return MaintenanceResponseMetrics(
+        total_alerts=total_alerts,
+        responded_alert_count=responded_alert_count,
+        unresponded_alert_count=unresponded_alert_count,
+        response_rate=response_rate,
+        average_response_time_seconds=(
+            sum(response_times) / responded_alert_count
+        ),
+        median_response_time_seconds=median(
+            response_times
+        ),
+        fastest_response_time_seconds=min(
+            response_times
+        ),
+        slowest_response_time_seconds=max(
+            response_times
+        ),
     )

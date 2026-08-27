@@ -30,3 +30,13 @@ class MaintenanceEffectivenessResponse(BaseModel):
 
     assigned_count: int
     assignment_rate: float | None
+
+    total_alerts: int
+    responded_alert_count: int
+    unresponded_alert_count: int
+    response_rate: float | None
+
+    average_response_time_seconds: float | None
+    median_response_time_seconds: float | None
+    fastest_response_time_seconds: float | None
+    slowest_response_time_seconds: float | None

@@ -2,11 +2,13 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timezone
+from app.models.alert import Alert
 
 from app.services.maintenance_analytics_service import (
     MaintenanceAnalyticsServiceError,
     calculate_machine_maintenance_effectiveness,
-)  
+    calculate_machine_maintenance_response,
+)
 
 from app.db.session import AsyncSessionLocal
 from app.models.maintenance_record import MaintenanceRecord
@@ -74,6 +76,29 @@ async def create_maintenance_test_machine(
     assert machine_response.status_code == 201
 
     return machine_response.json()["id"]
+
+async def create_maintenance_test_sensor(
+    client: AsyncClient,
+    admin_headers: dict[str, str],
+    machine_id: int,
+    name: str = "Maintenance Temperature Sensor",
+) -> int:
+    response = await client.post(
+        "/sensors",
+        headers=admin_headers,
+        json={
+            "machine_id": machine_id,
+            "name": name,
+            "sensor_type": "temperature",
+            "unit": "C",
+            "status": "active",
+        },
+    )
+
+    assert response.status_code == 201
+
+    return response.json()["id"]
+
 
 
 async def create_valid_maintenance_record(
@@ -743,6 +768,17 @@ async def test_maintenance_analytics_api_supports_empty_history(
     assert data["alert_link_rate"] is None
     assert data["assignment_rate"] is None
 
+    assert data["total_alerts"] == 0
+    assert data["responded_alert_count"] == 0
+    assert data["unresponded_alert_count"] == 0
+
+    assert data["response_rate"] is None
+
+    assert data["average_response_time_seconds"] is None
+    assert data["median_response_time_seconds"] is None
+    assert data["fastest_response_time_seconds"] is None
+    assert data["slowest_response_time_seconds"] is None
+
 
 async def test_maintenance_analytics_api_filters_by_created_at(
     client: AsyncClient,
@@ -895,3 +931,653 @@ async def test_maintenance_analytics_api_rejects_invalid_date_range(
     assert response.json() == {
         "detail": "end_at must be later than start_at"
     }
+
+async def test_maintenance_response_service_calculates_metrics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    machine_id = await create_maintenance_test_machine(
+        client,
+        auth_headers["admin"],
+    )
+
+    sensor_id = await create_maintenance_test_sensor(
+        client,
+        auth_headers["admin"],
+        machine_id,
+    )
+
+    async with AsyncSessionLocal() as db:
+        alerts = [
+            Alert(
+                sensor_id=sensor_id,
+                severity="high",
+                title="Alert A",
+                message="First machine alert",
+                status="open",
+                created_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    8,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
+            Alert(
+                sensor_id=sensor_id,
+                severity="high",
+                title="Alert B",
+                message="Second machine alert",
+                status="open",
+                created_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    9,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
+            Alert(
+                sensor_id=sensor_id,
+                severity="medium",
+                title="Alert C",
+                message="Unresponded machine alert",
+                status="open",
+                created_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    10,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
+        ]
+
+        db.add_all(alerts)
+        await db.flush()
+
+        db.add_all(
+            [
+                MaintenanceRecord(
+                    machine_id=machine_id,
+                    alert_id=alerts[0].id,
+                    maintenance_type="corrective",
+                    description="Response to Alert A",
+                    status="completed",
+                    performed_at=datetime(
+                        2026,
+                        8,
+                        20,
+                        8,
+                        10,
+                        tzinfo=timezone.utc,
+                    ),
+                ),
+                MaintenanceRecord(
+                    machine_id=machine_id,
+                    alert_id=alerts[1].id,
+                    maintenance_type="corrective",
+                    description="Response to Alert B",
+                    status="verified",
+                    performed_at=datetime(
+                        2026,
+                        8,
+                        20,
+                        9,
+                        50,
+                        tzinfo=timezone.utc,
+                    ),
+                ),
+            ]
+        )
+
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_maintenance_response(
+            db,
+            machine_id,
+        )
+
+    assert metrics.total_alerts == 3
+    assert metrics.responded_alert_count == 2
+    assert metrics.unresponded_alert_count == 1
+
+    assert metrics.response_rate == pytest.approx(
+        2 / 3
+    )
+
+    assert metrics.average_response_time_seconds == pytest.approx(
+        1800
+    )
+
+    assert metrics.median_response_time_seconds == pytest.approx(
+        1800
+    )
+
+    assert metrics.fastest_response_time_seconds == pytest.approx(
+        600
+    )
+
+    assert metrics.slowest_response_time_seconds == pytest.approx(
+        3000
+    )
+
+
+async def test_maintenance_response_service_uses_earliest_qualifying_response(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    machine_id = await create_maintenance_test_machine(
+        client,
+        auth_headers["admin"],
+    )
+
+    sensor_id = await create_maintenance_test_sensor(
+        client,
+        auth_headers["admin"],
+        machine_id,
+    )
+
+    async with AsyncSessionLocal() as db:
+        alert = Alert(
+            sensor_id=sensor_id,
+            severity="high",
+            title="Motor Alert",
+            message="Motor temperature anomaly",
+            status="open",
+            created_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        db.add(alert)
+        await db.flush()
+
+        db.add_all(
+            [
+                # Not a qualifying finished response.
+                MaintenanceRecord(
+                    machine_id=machine_id,
+                    alert_id=alert.id,
+                    maintenance_type="corrective",
+                    description="Maintenance planned",
+                    status="planned",
+                    performed_at=datetime(
+                        2026,
+                        8,
+                        20,
+                        8,
+                        5,
+                        tzinfo=timezone.utc,
+                    ),
+                ),
+                # Earliest qualifying response.
+                MaintenanceRecord(
+                    machine_id=machine_id,
+                    alert_id=alert.id,
+                    maintenance_type="corrective",
+                    description="Repair completed",
+                    status="completed",
+                    performed_at=datetime(
+                        2026,
+                        8,
+                        20,
+                        8,
+                        30,
+                        tzinfo=timezone.utc,
+                    ),
+                ),
+                # Also qualifying, but later.
+                MaintenanceRecord(
+                    machine_id=machine_id,
+                    alert_id=alert.id,
+                    maintenance_type="corrective",
+                    description="Repair verified",
+                    status="verified",
+                    performed_at=datetime(
+                        2026,
+                        8,
+                        20,
+                        9,
+                        0,
+                        tzinfo=timezone.utc,
+                    ),
+                ),
+            ]
+        )
+
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_maintenance_response(
+            db,
+            machine_id,
+        )
+
+    assert metrics.total_alerts == 1
+    assert metrics.responded_alert_count == 1
+    assert metrics.unresponded_alert_count == 0
+
+    # The 08:05 planned record is ignored.
+    # The earliest completed/verified response is 08:30.
+    assert metrics.average_response_time_seconds == pytest.approx(
+        30 * 60
+    )
+
+    assert metrics.fastest_response_time_seconds == pytest.approx(
+        30 * 60
+    )
+
+    assert metrics.slowest_response_time_seconds == pytest.approx(
+        30 * 60
+    )
+
+
+async def test_maintenance_response_service_isolates_machine_alerts(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    machine_id = await create_maintenance_test_machine(
+        client,
+        auth_headers["admin"],
+    )
+
+    target_sensor_id = await create_maintenance_test_sensor(
+        client,
+        auth_headers["admin"],
+        machine_id,
+        name="Target Machine Sensor",
+    )
+
+    machine_response = await client.get(
+        f"/machines/{machine_id}",
+        headers=auth_headers["admin"],
+    )
+
+    assert machine_response.status_code == 200
+
+    area_id = machine_response.json()["area_id"]
+
+    other_machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": area_id,
+            "production_line_id": None,
+            "name": "Other Response Machine",
+            "code": "OTHER-RESPONSE-MACHINE",
+            "location": "Maintenance Area",
+            "status": "active",
+        },
+    )
+
+    assert other_machine_response.status_code == 201
+
+    other_machine_id = other_machine_response.json()["id"]
+
+    other_sensor_id = await create_maintenance_test_sensor(
+        client,
+        auth_headers["admin"],
+        other_machine_id,
+        name="Other Machine Sensor",
+    )
+
+    async with AsyncSessionLocal() as db:
+        target_alert = Alert(
+            sensor_id=target_sensor_id,
+            severity="high",
+            title="Target Alert",
+            message="Target machine alert",
+            status="open",
+            created_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        other_alert = Alert(
+            sensor_id=other_sensor_id,
+            severity="high",
+            title="Other Alert",
+            message="Other machine alert",
+            status="open",
+            created_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        db.add_all(
+            [
+                target_alert,
+                other_alert,
+            ]
+        )
+
+        await db.flush()
+
+        db.add(
+            MaintenanceRecord(
+                machine_id=other_machine_id,
+                alert_id=other_alert.id,
+                maintenance_type="corrective",
+                description="Other machine response",
+                status="completed",
+                performed_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    8,
+                    10,
+                    tzinfo=timezone.utc,
+                ),
+            )
+        )
+
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_maintenance_response(
+            db,
+            machine_id,
+        )
+
+    # Only the target machine's alert belongs in the cohort.
+    assert metrics.total_alerts == 1
+
+    # The maintenance response belongs to another machine,
+    # therefore the target alert remains unresponded.
+    assert metrics.responded_alert_count == 0
+    assert metrics.unresponded_alert_count == 1
+    assert metrics.response_rate == pytest.approx(0.0)
+
+
+async def test_maintenance_response_service_filters_alerts_by_created_at(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    machine_id = await create_maintenance_test_machine(
+        client,
+        auth_headers["admin"],
+    )
+
+    sensor_id = await create_maintenance_test_sensor(
+        client,
+        auth_headers["admin"],
+        machine_id,
+    )
+
+    async with AsyncSessionLocal() as db:
+        old_alert = Alert(
+            sensor_id=sensor_id,
+            severity="medium",
+            title="Old Alert",
+            message="Outside reporting period",
+            status="open",
+            created_at=datetime(
+                2026,
+                8,
+                1,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        selected_alert = Alert(
+            sensor_id=sensor_id,
+            severity="high",
+            title="Selected Alert",
+            message="Inside reporting period",
+            status="open",
+            created_at=datetime(
+                2026,
+                8,
+                10,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        future_alert = Alert(
+            sensor_id=sensor_id,
+            severity="medium",
+            title="Future Alert",
+            message="Outside reporting period",
+            status="open",
+            created_at=datetime(
+                2026,
+                8,
+                20,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+        db.add_all(
+            [
+                old_alert,
+                selected_alert,
+                future_alert,
+            ]
+        )
+
+        await db.flush()
+
+        db.add(
+            MaintenanceRecord(
+                machine_id=machine_id,
+                alert_id=selected_alert.id,
+                maintenance_type="corrective",
+                description="Selected alert response",
+                status="verified",
+                performed_at=datetime(
+                    2026,
+                    8,
+                    10,
+                    8,
+                    20,
+                    tzinfo=timezone.utc,
+                ),
+            )
+        )
+
+        await db.commit()
+
+    async with AsyncSessionLocal() as db:
+        metrics = await calculate_machine_maintenance_response(
+            db,
+            machine_id,
+            start_at=datetime(
+                2026,
+                8,
+                5,
+                tzinfo=timezone.utc,
+            ),
+            end_at=datetime(
+                2026,
+                8,
+                15,
+                tzinfo=timezone.utc,
+            ),
+        )
+
+    assert metrics.total_alerts == 1
+    assert metrics.responded_alert_count == 1
+    assert metrics.unresponded_alert_count == 0
+
+    assert metrics.response_rate == pytest.approx(1.0)
+
+    assert metrics.average_response_time_seconds == pytest.approx(
+        20 * 60
+    )
+
+    assert metrics.median_response_time_seconds == pytest.approx(
+        20 * 60
+    )
+
+
+
+async def test_maintenance_analytics_api_returns_alert_response_metrics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    machine_id = await create_maintenance_test_machine(
+        client,
+        auth_headers["admin"],
+    )
+
+    sensor_id = await create_maintenance_test_sensor(
+        client,
+        auth_headers["admin"],
+        machine_id,
+    )
+
+    async with AsyncSessionLocal() as db:
+        alerts = [
+            Alert(
+                sensor_id=sensor_id,
+                severity="high",
+                title="Alert A",
+                message="First machine alert",
+                status="open",
+                created_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    8,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
+            Alert(
+                sensor_id=sensor_id,
+                severity="high",
+                title="Alert B",
+                message="Second machine alert",
+                status="open",
+                created_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    9,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
+            Alert(
+                sensor_id=sensor_id,
+                severity="medium",
+                title="Alert C",
+                message="Unresponded machine alert",
+                status="open",
+                created_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    10,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
+        ]
+
+        db.add_all(alerts)
+        await db.flush()
+
+        db.add_all(
+            [
+                MaintenanceRecord(
+                    machine_id=machine_id,
+                    alert_id=alerts[0].id,
+                    maintenance_type="corrective",
+                    description="Alert A response",
+                    status="completed",
+                    performed_at=datetime(
+                        2026,
+                        8,
+                        20,
+                        8,
+                        10,
+                        tzinfo=timezone.utc,
+                    ),
+                ),
+                MaintenanceRecord(
+                    machine_id=machine_id,
+                    alert_id=alerts[1].id,
+                    maintenance_type="corrective",
+                    description="Alert B response",
+                    status="verified",
+                    performed_at=datetime(
+                        2026,
+                        8,
+                        20,
+                        9,
+                        50,
+                        tzinfo=timezone.utc,
+                    ),
+                ),
+            ]
+        )
+
+        await db.commit()
+
+    response = await client.get(
+        f"/machines/{machine_id}/maintenance-analytics",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["total_alerts"] == 3
+    assert data["responded_alert_count"] == 2
+    assert data["unresponded_alert_count"] == 1
+
+    assert data["response_rate"] == pytest.approx(
+        2 / 3
+    )
+
+    assert data[
+        "average_response_time_seconds"
+    ] == pytest.approx(
+        1800
+    )
+
+    assert data[
+        "median_response_time_seconds"
+    ] == pytest.approx(
+        1800
+    )
+
+    assert data[
+        "fastest_response_time_seconds"
+    ] == pytest.approx(
+        600
+    )
+
+    assert data[
+        "slowest_response_time_seconds"
+    ] == pytest.approx(
+        3000
+    )
