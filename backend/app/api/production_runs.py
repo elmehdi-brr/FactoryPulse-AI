@@ -21,6 +21,7 @@ from app.services.production_run_service import (
     get_production_runs,
     get_production_runs_by_line,
     update_production_run,
+    ProductionRunValidationError,
 )
 from app.services.oee_service import (
     OEEServiceError,
@@ -56,10 +57,16 @@ async def create_production_run_endpoint(
             detail="Production line not found",
         )
 
-    return await create_production_run(
-        db,
-        run_data,
-    )
+    try:
+        return await create_production_run(
+            db,
+            run_data,
+        )
+    except ProductionRunValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get(

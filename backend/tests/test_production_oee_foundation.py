@@ -1422,7 +1422,7 @@ async def test_line_oee_excludes_running_and_cancelled_runs(
         headers=auth_headers["admin"],
         json={
             "production_line_id": line_id,
-            "started_at": "2026-08-21T08:00:00Z",
+            "started_at": "2026-08-22T08:00:00Z",
             "status": "running",
             "total_quantity": 200,
             "good_quantity": 190,
@@ -1438,8 +1438,8 @@ async def test_line_oee_excludes_running_and_cancelled_runs(
         headers=auth_headers["admin"],
         json={
             "production_line_id": line_id,
-            "started_at": "2026-08-22T08:00:00Z",
-            "ended_at": "2026-08-22T09:00:00Z",
+            "started_at": "2026-08-21T08:00:00Z",
+            "ended_at": "2026-08-21T09:00:00Z",
             "status": "cancelled",
             "total_quantity": 100,
             "good_quantity": 90,
@@ -2079,4 +2079,147 @@ async def test_line_downtime_analytics_rejects_invalid_date_range(
 
     assert response.json() == {
         "detail": "end_at must be later than start_at"
+    }
+
+
+
+
+async def test_production_run_rejects_overlap_on_same_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T10:00:00Z",
+            "ended_at": "2026-08-20T14:00:00Z",
+            "status": "completed",
+            "total_quantity": 300,
+            "good_quantity": 290,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run overlaps an existing run "
+            "on the same production line"
+        )
+    }
+
+
+async def test_production_run_allows_touching_boundaries(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    first_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=10.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    second_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T12:00:00Z",
+            "ended_at": "2026-08-20T16:00:00Z",
+            "status": "completed",
+            "total_quantity": 400,
+            "good_quantity": 390,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert first_run["id"] is not None
+
+    assert second_response.status_code == 201
+
+
+async def test_open_production_run_blocks_later_run_on_same_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    running_response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-20T08:00:00Z",
+            "status": "running",
+            "total_quantity": 0,
+            "good_quantity": 0,
+            "reject_quantity": 0,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert running_response.status_code == 201
+
+    response = await client.post(
+        "/production-runs",
+        headers=auth_headers["admin"],
+        json={
+            "production_line_id": line_id,
+            "started_at": "2026-08-21T08:00:00Z",
+            "ended_at": "2026-08-21T12:00:00Z",
+            "status": "completed",
+            "total_quantity": 300,
+            "good_quantity": 290,
+            "reject_quantity": 10,
+            "ideal_cycle_time_seconds": 10.0,
+        },
+    )
+
+    assert response.status_code == 422
+
+    assert response.json() == {
+        "detail": (
+            "Production run overlaps an existing run "
+            "on the same production line"
+        )
     }
