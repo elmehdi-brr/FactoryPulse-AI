@@ -3314,3 +3314,592 @@ Operational Prioritization Foundation
 ```
 
 Operational Intelligence is therefore the first FactoryPulse layer that deliberately combines multiple previously independent industrial analytics domains into one production-management view.
+
+
+---
+
+# Operational Priority Ranking
+
+## Overview
+
+Operational Priority Ranking extends the Operational Intelligence layer by identifying which machines deserve operational attention first.
+
+The ranking is intentionally:
+
+- deterministic
+- explainable
+- relative to the machines on the selected production line
+- based on existing industrial metrics
+- free from arbitrary AI-generated scores
+
+FactoryPulse does not currently expose a mysterious health score such as:
+
+```text
+Machine A health score = 37.4
+```
+
+Instead, it exposes the evidence behind the ranking.
+
+Example:
+
+```
+Machine A
+priority_rank = 1
+
+downtime_rank = 1
+failure_rank = 1
+mttr_rank = 2
+mtbf_rank = 1
+```
+
+This allows operators and managers to understand why a machine received its position.
+
+---
+
+## Ranking Inputs
+
+The current priority model uses four operational indicators:
+
+```
+recorded downtime burden
+failure count
+MTTR
+MTBF
+```
+
+Their adverse directions are:
+
+```
+Higher recorded downtime = worse
+
+Higher failure count = worse
+
+Higher MTTR = worse
+
+Lower MTBF = worse
+```
+
+These metrics already exist in the Operational Intelligence machine-impact model.
+
+The priority engine therefore does not introduce a second implementation of downtime or reliability calculations.
+
+---
+
+## Why FactoryPulse Does Not Use Arbitrary Weights
+
+A weighted formula such as:
+
+```
+priority score =
+downtime × 0.40
++
+failure count × 0.30
++
+MTTR × 0.20
++
+MTBF × 0.10
+```
+
+would require evidence that those weights correctly represent the business priorities of the factory.
+
+FactoryPulse does not currently possess that plant-specific knowledge.
+
+Therefore the first priority model gives equal importance to the four ranking dimensions rather than inventing business weights.
+
+Future versions may support configurable weights if organizations explicitly define them.
+
+---
+
+## Metric Ranking
+
+Each machine receives a relative rank for every supported metric.
+
+Example:
+
+```
+               Downtime   Failures   MTTR   MTBF
+
+Machine A         1          1        2      1
+Machine B         2          2        1      2
+Machine C         3          3        -      -
+```
+
+Rank:
+
+```
+1
+```
+
+represents the most concerning value for that metric.
+
+---
+
+## Downtime Rank
+
+Machines are ranked by:
+
+```
+recorded_downtime_seconds
+```
+
+in descending order.
+
+Therefore:
+
+```
+more recorded downtime
+=
+more operational concern
+```
+
+Example:
+
+```
+Machine A = 4 hours → rank 1
+Machine B = 2 hours → rank 2
+Machine C = 0 hours → rank 3
+```
+
+---
+
+## Failure Rank
+
+Machines are ranked by:
+
+```
+failure_count
+```
+
+in descending order.
+
+Therefore:
+
+```
+more qualifying failures
+=
+more operational concern
+```
+
+The failure definition remains the same as Machine Reliability Analytics.
+
+Operational Priority Ranking does not redefine what constitutes a failure.
+
+---
+
+## MTTR Rank
+
+MTTR measures the average time required to recover from qualifying machine failures.
+
+For MTTR:
+
+```
+higher MTTR
+=
+worse
+```
+
+Example:
+
+```
+Machine A MTTR = 20 minutes
+Machine B MTTR = 50 minutes
+```
+
+Therefore:
+
+```
+Machine B receives the more concerning MTTR rank.
+```
+
+---
+
+## MTBF Rank
+
+MTBF measures operating exposure relative to failure count.
+
+For MTBF:
+
+```
+lower MTBF
+=
+worse
+```
+
+Example:
+
+```
+Machine A MTBF = 6 hours
+Machine B MTBF = 20 hours
+```
+
+Machine A receives the more concerning MTBF rank because it fails more frequently relative to its operating exposure.
+
+---
+
+## Competition Ranking
+
+Metric rankings use competition ranking.
+
+Example:
+
+```
+Machine A downtime = 2 hours
+Machine B downtime = 2 hours
+Machine C downtime = 1 hour
+```
+
+The downtime ranks are:
+
+```
+Machine A = 1
+Machine B = 1
+Machine C = 3
+```
+
+They are not:
+
+```
+1
+2
+3
+```
+
+because Machine A and Machine B have equal metric values.
+
+Competition ranking preserves genuine ties.
+
+---
+
+## Priority Position
+
+The first priority model combines the four metric ranks with equal importance.
+
+Conceptually:
+
+```
+priority rank value =
+downtime rank
++
+failure rank
++
+MTTR rank
++
+MTBF rank
+```
+
+Lower aggregate rank values represent greater operational concern.
+
+Example:
+
+```
+Machine A
+
+downtime rank = 1
+failure rank = 1
+MTTR rank = 2
+MTBF rank = 1
+
+aggregate rank value = 5
+```
+
+Machine B:
+
+```
+downtime rank = 2
+failure rank = 2
+MTTR rank = 1
+MTBF rank = 2
+
+aggregate rank value = 7
+```
+
+Therefore:
+
+```
+Machine A priority_rank = 1
+Machine B priority_rank = 2
+```
+
+The internal aggregate rank value is not exposed as a fake health score.
+
+The public API exposes the priority position and its component evidence.
+
+---
+
+## Zero-Failure Machines
+
+A machine with:
+
+```
+failure_count = 0
+```
+
+naturally has:
+
+```
+MTTR = null
+MTBF = null
+```
+
+This does not mean that the machine has poor reliability.
+
+It means there were no qualifying failures from which those metrics could be calculated.
+
+FactoryPulse therefore does not interpret:
+
+```
+MTBF = null
+```
+
+as:
+
+```
+bad MTBF
+```
+
+For ranking purposes, a zero-failure machine is treated as better than machines that experienced qualifying failures.
+
+Its public response remains:
+
+```
+mttr_rank = null
+mtbf_rank = null
+```
+
+because the metrics are not applicable.
+
+This distinction prevents healthy machines from being penalized for missing failure-based metrics.
+
+---
+
+## No Operational Concern
+
+If every machine has:
+
+```
+recorded_downtime_seconds = 0
+failure_count = 0
+```
+
+there is no evidence supporting an operational priority.
+
+FactoryPulse therefore returns:
+
+```
+top_priority_machine_id = null
+```
+
+and machine priority values are:
+
+```
+priority_rank = null
+```
+
+rather than arbitrarily selecting a machine.
+
+---
+
+## Priority Result Model
+
+The pure domain layer exposes:
+
+```
+MachineOperationalPriority
+```
+
+with:
+
+```
+machine_id
+machine_name
+machine_code
+
+priority_rank
+
+downtime_rank
+failure_rank
+mttr_rank
+mtbf_rank
+```
+
+The line-level summary exposes:
+
+```
+OperationalPrioritySummary
+```
+
+with:
+
+```
+top_priority_machine_id
+machines
+```
+
+---
+
+## Integration with Operational Intelligence
+
+The priority calculation occurs after the existing Operational Impact calculation.
+
+Flow:
+
+```
+Production Runs
+      ↓
+     OEE
+
+Downtime Events
+      ↓
+Downtime Analytics
+
+Machines
+      ↓
+Reliability Analytics
+      ↓
+Machine Operational Impact
+      ↓
+Operational Priority Ranking
+```
+
+No additional PostgreSQL query is required specifically for ranking.
+
+The priority engine operates on machine facts already produced by Operational Intelligence.
+
+---
+
+## API Integration
+
+Priority ranking is exposed through the existing endpoint:
+
+```
+GET /production-lines/{production_line_id}/operational-intelligence
+```
+
+No separate priority endpoint is required.
+
+The response now conceptually contains:
+
+```
+Operational Intelligence
+│
+├── OEE
+│
+├── Operational Impact
+│   ├── downtime attribution
+│   ├── machine downtime burden
+│   ├── failure count
+│   ├── MTTR
+│   ├── MTBF
+│   └── operating exposure
+│
+└── Priority
+    ├── top_priority_machine_id
+    │
+    └── machines
+        ├── priority_rank
+        ├── downtime_rank
+        ├── failure_rank
+        ├── mttr_rank
+        └── mtbf_rank
+```
+
+This keeps production performance, reliability facts, and operational prioritization within one coherent report.
+
+---
+
+## Validation Rules
+
+The pure priority engine rejects inconsistent input such as:
+
+```
+negative recorded downtime
+negative failure count
+duplicate machine IDs
+```
+
+A machine with qualifying failures must also have the reliability values required by the priority engine.
+
+This protects the ranking from silently operating on contradictory data.
+
+---
+
+## Testing
+
+Operational Priority Ranking is covered by pure analytics, PostgreSQL-backed orchestration, and API tests.
+
+Pure tests cover:
+
+```
+priority ordering
+metric ranks
+competition ranking
+ties
+zero-failure machines
+null MTTR/MTBF semantics
+no-concern population
+invalid machine reliability input
+```
+
+PostgreSQL orchestration tests prove that priority ranking uses metrics calculated from actual FactoryPulse production and downtime records.
+
+API tests prove that the ranking evidence is exposed correctly through the Operational Intelligence endpoint.
+
+---
+
+## Regression Status
+
+After Operational Priority Ranking:
+
+```
+248 tests passed
+```
+
+The complete FactoryPulse backend regression suite remained green.
+
+---
+
+## Current Interpretation
+
+Operational Priority Ranking answers:
+
+> Which machine currently deserves the most operational attention based on the evidence available in FactoryPulse?
+
+It does not claim:
+
+> Which machine is objectively the most important machine in the factory?
+
+Business criticality, replacement cost, safety impact, production bottleneck importance, spare-parts availability, and other plant-specific factors are not yet included.
+
+The current priority result should therefore be interpreted as:
+
+```
+data-driven operational concern
+```
+
+rather than:
+
+```
+complete business criticality
+```
+
+---
+
+## Future Priority Extensions
+
+Future versions may incorporate explicitly modeled factors such as:
+
+```
+machine criticality
+safety impact
+production bottleneck importance
+maintenance backlog
+alert severity
+maintenance response performance
+repeat failure patterns
+production loss estimates
+cost impact
+```
+
+Plant-specific configurable weights may also be introduced if organizations define their priorities explicitly.
+
+Until then, FactoryPulse keeps the ranking simple, transparent, and auditable.
