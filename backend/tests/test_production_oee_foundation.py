@@ -11,6 +11,10 @@ from app.services.machine_reliability_service import (
     MachineReliabilityServiceError,
     calculate_machine_reliability,
 )
+from app.services.operational_intelligence_service import (
+    OperationalIntelligenceServiceError,
+    calculate_production_line_operational_intelligence,
+)
 
 
 async def create_production_test_hierarchy(
@@ -3427,3 +3431,711 @@ async def test_machine_reliability_api_returns_no_mtbf_for_standalone_machine(
 
     assert data["operating_exposure_seconds"] is None
     assert data["mtbf_seconds"] is None
+
+
+
+
+
+async def test_operational_intelligence_service_combines_line_and_machine_metrics(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_a_id = hierarchy["machine_id"]
+
+    machine_b_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": line_id,
+            "name": "Assembly Machine B",
+            "code": "MACHINE-B",
+            "location": "Assembly Line A",
+            "status": "active",
+        },
+    )
+
+    assert machine_b_response.status_code == 201
+    machine_b_id = machine_b_response.json()["id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T16:00:00Z",
+        ideal_cycle_time_seconds=30.0,
+        total_quantity=600,
+        good_quantity=570,
+    )
+
+    # Machine A failure #1: 1 hour.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Machine A Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_a_id,
+    )
+
+    # Machine B failure: overlaps Machine A by 30 minutes.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Machine B Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:30:00Z",
+        ended_at="2026-08-20T10:30:00Z",
+        machine_id=machine_b_id,
+    )
+
+    # Line-wide planned downtime: 1 hour.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Changeover",
+        category="planned",
+        started_at="2026-08-20T12:00:00Z",
+        ended_at="2026-08-20T13:00:00Z",
+        machine_id=None,
+    )
+
+    # Machine A failure #2: 30 minutes.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Machine A Sensor Failure",
+        category="unplanned",
+        started_at="2026-08-20T14:00:00Z",
+        ended_at="2026-08-20T14:30:00Z",
+        machine_id=machine_a_id,
+    )
+
+    async with AsyncSessionLocal() as db:
+        result = (
+            await calculate_production_line_operational_intelligence(
+                db,
+                line_id,
+            )
+        )
+
+    assert result.production_line_id == line_id
+    assert result.run_count == 1
+
+    # -----------------------------------------------------
+    # OEE uses UNIQUE elapsed downtime.
+    #
+    # Scheduled time = 8h
+    # Planned downtime = 1h
+    # Planned production time = 7h
+    #
+    # Unique unplanned downtime:
+    # 09:00 -> 10:30 = 1.5h
+    # 14:00 -> 14:30 = 0.5h
+    # Total = 2h
+    #
+    # Operating time = 7h - 2h = 5h
+    # -----------------------------------------------------
+
+    assert result.oee.scheduled_time_seconds == pytest.approx(
+        8 * 3600
+    )
+
+    assert result.oee.planned_downtime_seconds == pytest.approx(
+        1 * 3600
+    )
+
+    assert result.oee.unplanned_downtime_seconds == pytest.approx(
+        2 * 3600
+    )
+
+    assert result.oee.operating_time_seconds == pytest.approx(
+        5 * 3600
+    )
+
+    assert result.oee.availability == pytest.approx(
+        5 / 7
+    )
+
+    # ideal production time:
+    # 600 units * 30 sec = 18,000 sec = 5h
+    #
+    # operating time is also 5h.
+    assert result.oee.performance == pytest.approx(
+        1.0
+    )
+
+    assert result.oee.quality == pytest.approx(
+        570 / 600
+    )
+
+    assert result.oee.oee == pytest.approx(
+        (5 / 7) * 1.0 * (570 / 600)
+    )
+
+    # -----------------------------------------------------
+    # Downtime analytics uses RECORDED event duration.
+    #
+    # Machine A = 1h + 0.5h = 1.5h
+    # Machine B = 1h
+    # Line-wide = 1h
+    #
+    # Recorded burden = 3.5h
+    # -----------------------------------------------------
+
+    assert (
+        result.operational_impact.recorded_downtime_seconds
+        == pytest.approx(3.5 * 3600)
+    )
+
+    assert (
+        result.operational_impact
+        .machine_attributed_recorded_downtime_seconds
+        == pytest.approx(2.5 * 3600)
+    )
+
+    assert (
+        result.operational_impact
+        .unattributed_recorded_downtime_seconds
+        == pytest.approx(1 * 3600)
+    )
+
+    assert (
+        result.operational_impact.machine_attributed_share
+        == pytest.approx(2.5 / 3.5)
+    )
+
+    assert (
+        result.operational_impact.unattributed_share
+        == pytest.approx(1 / 3.5)
+    )
+
+    assert (
+        result.operational_impact.top_downtime_machine_id
+        == machine_a_id
+    )
+
+    # Machine A ranks first because it has 1.5h
+    # of recorded downtime burden.
+    machine_a = result.operational_impact.machines[0]
+    machine_b = result.operational_impact.machines[1]
+
+    assert machine_a.machine_id == machine_a_id
+
+    assert machine_a.recorded_downtime_event_count == 2
+
+    assert machine_a.recorded_downtime_seconds == pytest.approx(
+        1.5 * 3600
+    )
+
+    assert machine_a.recorded_downtime_share == pytest.approx(
+        1.5 / 3.5
+    )
+
+    assert machine_a.failure_count == 2
+
+    # 90 minutes of failures / 2 failures.
+    assert machine_a.mttr_seconds == pytest.approx(
+        45 * 60
+    )
+
+    # All unique downtime across the run:
+    # 1h planned + 2h unplanned = 3h.
+    #
+    # 8h - 3h = 5h operating exposure.
+    assert machine_a.operating_exposure_seconds == pytest.approx(
+        5 * 3600
+    )
+
+    # 5h exposure / 2 failures.
+    assert machine_a.mtbf_seconds == pytest.approx(
+        2.5 * 3600
+    )
+
+    assert machine_b.machine_id == machine_b_id
+
+    assert machine_b.recorded_downtime_event_count == 1
+
+    assert machine_b.recorded_downtime_seconds == pytest.approx(
+        1 * 3600
+    )
+
+    assert machine_b.recorded_downtime_share == pytest.approx(
+        1 / 3.5
+    )
+
+    assert machine_b.failure_count == 1
+
+    assert machine_b.mttr_seconds == pytest.approx(
+        1 * 3600
+    )
+
+    assert machine_b.operating_exposure_seconds == pytest.approx(
+        5 * 3600
+    )
+
+    assert machine_b.mtbf_seconds == pytest.approx(
+        5 * 3600
+    )
+
+
+async def test_operational_intelligence_service_includes_machine_without_downtime(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    machine_b_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": line_id,
+            "name": "Healthy Machine B",
+            "code": "HEALTHY-MACHINE-B",
+            "location": "Assembly Line A",
+            "status": "active",
+        },
+    )
+
+    assert machine_b_response.status_code == 201
+    machine_b_id = machine_b_response.json()["id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=30.0,
+        total_quantity=400,
+        good_quantity=390,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Machine A Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=hierarchy["machine_id"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        result = (
+            await calculate_production_line_operational_intelligence(
+                db,
+                line_id,
+            )
+        )
+
+    machine_b = next(
+        machine
+        for machine in result.operational_impact.machines
+        if machine.machine_id == machine_b_id
+    )
+
+    assert machine_b.recorded_downtime_event_count == 0
+    assert machine_b.recorded_downtime_seconds == 0.0
+    assert machine_b.recorded_downtime_share == pytest.approx(0.0)
+
+    assert machine_b.failure_count == 0
+    assert machine_b.mttr_seconds is None
+
+    # The machine still receives the line's production
+    # operating exposure.
+    assert machine_b.operating_exposure_seconds == pytest.approx(
+        3 * 3600
+    )
+
+    assert machine_b.mtbf_seconds is None
+
+
+async def test_operational_intelligence_service_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    async with AsyncSessionLocal() as db:
+        with pytest.raises(
+            OperationalIntelligenceServiceError,
+            match="end_at must be later than start_at",
+        ):
+            await calculate_production_line_operational_intelligence(
+                db,
+                hierarchy["production_line_id"],
+                start_at=datetime(
+                    2026,
+                    8,
+                    20,
+                    tzinfo=timezone.utc,
+                ),
+                end_at=datetime(
+                    2026,
+                    8,
+                    10,
+                    tzinfo=timezone.utc,
+                ),
+            )
+
+
+async def test_operational_intelligence_api_returns_complete_report(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_a_id = hierarchy["machine_id"]
+
+    machine_b_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": line_id,
+            "name": "Operational Machine B",
+            "code": "OP-MACHINE-B",
+            "location": "Operational Line",
+            "status": "active",
+        },
+    )
+
+    assert machine_b_response.status_code == 201
+    machine_b_id = machine_b_response.json()["id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T16:00:00Z",
+        ideal_cycle_time_seconds=30.0,
+        total_quantity=600,
+        good_quantity=570,
+    )
+
+    # Machine A: 1 hour.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:00:00Z",
+        ended_at="2026-08-20T10:00:00Z",
+        machine_id=machine_a_id,
+    )
+
+    # Machine B: 1 hour, overlapping A by 30 minutes.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T09:30:00Z",
+        ended_at="2026-08-20T10:30:00Z",
+        machine_id=machine_b_id,
+    )
+
+    # Line-wide planned event: 1 hour.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Changeover",
+        category="planned",
+        started_at="2026-08-20T12:00:00Z",
+        ended_at="2026-08-20T13:00:00Z",
+        machine_id=None,
+    )
+
+    # Second Machine A failure: 30 minutes.
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Sensor Failure",
+        category="unplanned",
+        started_at="2026-08-20T14:00:00Z",
+        ended_at="2026-08-20T14:30:00Z",
+        machine_id=machine_a_id,
+    )
+
+    response = await client.get(
+        f"/production-lines/{line_id}/operational-intelligence",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["production_line_id"] == line_id
+    assert data["run_count"] == 1
+    assert data["start_at"] is None
+    assert data["end_at"] is None
+
+    # -----------------------------------------------------
+    # OEE
+    # -----------------------------------------------------
+
+    oee = data["oee"]
+
+    assert oee["run_count"] == 1
+
+    assert oee["scheduled_time_seconds"] == pytest.approx(
+        8 * 3600
+    )
+
+    assert oee["planned_downtime_seconds"] == pytest.approx(
+        1 * 3600
+    )
+
+    assert oee["planned_production_time_seconds"] == pytest.approx(
+        7 * 3600
+    )
+
+    assert oee["unplanned_downtime_seconds"] == pytest.approx(
+        2 * 3600
+    )
+
+    assert oee["operating_time_seconds"] == pytest.approx(
+        5 * 3600
+    )
+
+    assert oee["availability"] == pytest.approx(
+        5 / 7
+    )
+
+    assert oee["performance"] == pytest.approx(
+        1.0
+    )
+
+    assert oee["quality"] == pytest.approx(
+        570 / 600
+    )
+
+    assert oee["oee"] == pytest.approx(
+        (5 / 7) * (570 / 600)
+    )
+
+    # -----------------------------------------------------
+    # Recorded downtime attribution
+    # -----------------------------------------------------
+
+    impact = data["operational_impact"]
+
+    assert impact["recorded_downtime_seconds"] == pytest.approx(
+        3.5 * 3600
+    )
+
+    assert (
+        impact[
+            "machine_attributed_recorded_downtime_seconds"
+        ]
+        == pytest.approx(2.5 * 3600)
+    )
+
+    assert (
+        impact["unattributed_recorded_downtime_seconds"]
+        == pytest.approx(1 * 3600)
+    )
+
+    assert impact["machine_attributed_share"] == pytest.approx(
+        2.5 / 3.5
+    )
+
+    assert impact["unattributed_share"] == pytest.approx(
+        1 / 3.5
+    )
+
+    assert impact["top_downtime_machine_id"] == machine_a_id
+
+    # -----------------------------------------------------
+    # Machine ranking + reliability
+    # -----------------------------------------------------
+
+    machines = impact["machines"]
+
+    assert len(machines) == 2
+
+    machine_a = machines[0]
+    machine_b = machines[1]
+
+    assert machine_a["machine_id"] == machine_a_id
+    assert machine_a["recorded_downtime_event_count"] == 2
+
+    assert machine_a["recorded_downtime_seconds"] == pytest.approx(
+        1.5 * 3600
+    )
+
+    assert machine_a["recorded_downtime_share"] == pytest.approx(
+        1.5 / 3.5
+    )
+
+    assert machine_a["failure_count"] == 2
+
+    assert machine_a["mttr_seconds"] == pytest.approx(
+        45 * 60
+    )
+
+    assert machine_a["operating_exposure_seconds"] == pytest.approx(
+        5 * 3600
+    )
+
+    assert machine_a["mtbf_seconds"] == pytest.approx(
+        2.5 * 3600
+    )
+
+    assert machine_b["machine_id"] == machine_b_id
+    assert machine_b["recorded_downtime_event_count"] == 1
+
+    assert machine_b["recorded_downtime_seconds"] == pytest.approx(
+        1 * 3600
+    )
+
+    assert machine_b["failure_count"] == 1
+
+    assert machine_b["mttr_seconds"] == pytest.approx(
+        1 * 3600
+    )
+
+    assert machine_b["mtbf_seconds"] == pytest.approx(
+        5 * 3600
+    )
+
+
+async def test_operational_intelligence_api_allows_all_authenticated_roles(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+
+    await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        ideal_cycle_time_seconds=30.0,
+        total_quantity=300,
+        good_quantity=290,
+    )
+
+    for role in (
+        "admin",
+        "manager",
+        "technician",
+        "operator",
+    ):
+        response = await client.get(
+            (
+                f"/production-lines/{line_id}"
+                "/operational-intelligence"
+            ),
+            headers=auth_headers[role],
+        )
+
+        assert response.status_code == 200
+
+
+async def test_operational_intelligence_api_returns_404_for_missing_line(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/production-lines/999999/operational-intelligence",
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == (
+        "Production line not found"
+    )
+
+
+async def test_operational_intelligence_api_rejects_invalid_date_range(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/production-lines/"
+            f"{hierarchy['production_line_id']}"
+            "/operational-intelligence"
+        ),
+        headers=auth_headers["admin"],
+        params={
+            "start_at": "2026-08-20T16:00:00Z",
+            "end_at": "2026-08-20T08:00:00Z",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "end_at must be later than start_at"
+    )
+
+
+async def test_operational_intelligence_api_rejects_period_without_completed_runs(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    response = await client.get(
+        (
+            f"/production-lines/"
+            f"{hierarchy['production_line_id']}"
+            "/operational-intelligence"
+        ),
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 422
+
+    assert response.json()["detail"] == (
+        "No completed production runs found "
+        "for the selected period"
+    )
