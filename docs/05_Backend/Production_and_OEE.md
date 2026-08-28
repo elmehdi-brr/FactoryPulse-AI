@@ -3903,3 +3903,716 @@ cost impact
 Plant-specific configurable weights may also be introduced if organizations define their priorities explicitly.
 
 Until then, FactoryPulse keeps the ranking simple, transparent, and auditable.
+
+
+---
+
+# Downtime Cause Intelligence
+
+## Overview
+
+Downtime Cause Intelligence extends Operational Intelligence by explaining the recorded reasons associated with machine downtime.
+
+After Operational Priority Ranking identifies which machine deserves attention, Downtime Cause Intelligence helps answer:
+
+> Why is this machine accumulating downtime?
+
+The analysis uses the existing:
+
+```text
+DowntimeEvent.reason
+```
+
+field.
+
+FactoryPulse deliberately refers to these values as:
+
+```text
+recorded downtime reasons
+```
+
+rather than:
+
+```text
+verified root causes
+```
+
+because the current data model does not contain a formal root-cause-analysis workflow or verified root-cause entity.
+
+---
+
+## Operational Flow
+
+The Operational Intelligence flow now becomes:
+
+```text
+Production Line
+      │
+      ├── OEE
+      │
+      ├── Downtime Attribution
+      │
+      ├── Machine Reliability
+      │
+      ├── Operational Priority Ranking
+      │
+      └── Downtime Cause Intelligence
+              │
+              ├── dominant duration reason
+              ├── most frequent reason
+              └── per-reason breakdown
+```
+
+This allows FactoryPulse to move from:
+
+```text
+Which machine has the largest operational concern?
+```
+
+to:
+
+```text
+Which recorded downtime reasons explain that concern?
+```
+
+---
+
+## Pure Analytics Layer
+
+The reason-analysis logic is implemented in:
+
+```text
+app/production/downtime_analytics.py
+```
+
+The pure calculation:
+
+```text
+calculate_machine_downtime_reason_analytics()
+```
+
+accepts normalized downtime analytics events and a target machine ID.
+
+It does not access PostgreSQL or FastAPI directly.
+
+---
+
+## Machine Downtime Reason Summary
+
+For each machine, FactoryPulse calculates:
+
+```text
+machine_id
+
+event_count
+recorded_downtime_seconds
+
+dominant_duration_reason
+most_frequent_reason
+
+by_reason
+```
+
+The `by_reason` collection contains detailed metrics for every recorded reason.
+
+---
+
+## Per-Reason Metrics
+
+Each recorded reason includes:
+
+```text
+reason
+
+event_count
+duration_seconds
+percentage
+
+planned_event_count
+planned_duration_seconds
+
+unplanned_event_count
+unplanned_duration_seconds
+```
+
+This allows FactoryPulse to distinguish:
+
+```text
+how often a reason occurred
+```
+
+from:
+
+```text
+how much recorded downtime it accumulated
+```
+
+---
+
+## Duration vs Frequency
+
+Frequency and downtime burden are intentionally treated as different concepts.
+
+Example:
+
+```text
+Motor Overheating
+2 events
+2.0 hours total
+
+Bearing Failure
+3 events
+1.5 hours total
+```
+
+The result is:
+
+```text
+dominant_duration_reason =
+Motor Overheating
+
+most_frequent_reason =
+Bearing Failure
+```
+
+Therefore:
+
+```text
+most frequent
+```
+
+does not necessarily mean:
+
+```text
+largest downtime burden
+```
+
+This distinction is operationally important.
+
+A frequent short interruption may require a different response from a rare but extremely long failure.
+
+---
+
+## Dominant Duration Reason
+
+The:
+
+```text
+dominant_duration_reason
+```
+
+is the recorded reason with the greatest accumulated downtime-event duration for the target machine.
+
+Conceptually:
+
+```text
+Reason A = 3.0 hours
+Reason B = 1.5 hours
+Reason C = 0.5 hours
+```
+
+results in:
+
+```text
+dominant_duration_reason = Reason A
+```
+
+---
+
+## Most Frequent Reason
+
+The:
+
+```text
+most_frequent_reason
+```
+
+is the recorded reason with the greatest number of downtime events.
+
+Example:
+
+```text
+Reason A = 2 events
+Reason B = 5 events
+Reason C = 1 event
+```
+
+results in:
+
+```text
+most_frequent_reason = Reason B
+```
+
+---
+
+## Reason Share
+
+For each machine reason:
+
+```text
+percentage =
+reason recorded downtime duration
+/
+machine total recorded downtime duration
+```
+
+Example:
+
+```text
+Machine A total recorded downtime = 4 hours
+
+Motor Overheating = 2 hours
+Bearing Failure = 1.5 hours
+Sensor Fault = 0.5 hours
+```
+
+Therefore:
+
+```text
+Motor Overheating = 50%
+Bearing Failure = 37.5%
+Sensor Fault = 12.5%
+```
+
+These percentages describe recorded downtime-event burden.
+
+They do not represent independently attributable unique production loss when events overlap.
+
+The same semantic distinction used by Operational Intelligence remains in effect.
+
+---
+
+## Planned and Unplanned Breakdown
+
+A recorded reason may appear in both planned and unplanned downtime events.
+
+FactoryPulse therefore preserves both categories.
+
+Example:
+
+```text
+Maintenance
+
+planned:
+1 event
+60 minutes
+
+unplanned:
+1 event
+30 minutes
+```
+
+The reason summary becomes:
+
+```text
+event_count = 2
+duration = 90 minutes
+
+planned_event_count = 1
+planned_duration = 60 minutes
+
+unplanned_event_count = 1
+unplanned_duration = 30 minutes
+```
+
+This prevents the analytics layer from treating all occurrences of the same textual reason as operationally identical.
+
+---
+
+## Reason Normalization
+
+Recorded reasons are normalized for grouping.
+
+FactoryPulse currently:
+
+```text
+trims surrounding whitespace
++
+groups case-insensitively
+```
+
+Therefore values such as:
+
+```text
+"Motor Overheating"
+" motor overheating "
+"MOTOR OVERHEATING"
+```
+
+belong to the same logical reason group.
+
+The first normalized display representation is preserved for the report.
+
+---
+
+## Unspecified Reasons
+
+If a reason contains only whitespace, the analytics layer normalizes it to:
+
+```text
+Unspecified
+```
+
+This prevents blank reason groups from appearing in reports.
+
+---
+
+## Machine Isolation
+
+Reason intelligence is calculated separately for each machine.
+
+Events belonging to another machine do not contribute to the target machine's:
+
+```text
+event_count
+recorded_downtime_seconds
+reason percentages
+dominant duration reason
+most frequent reason
+```
+
+This preserves machine-level analytical isolation.
+
+---
+
+## Empty Machine History
+
+A production-line machine may have no downtime events in the selected reporting period.
+
+It remains part of Operational Intelligence.
+
+Its reason summary becomes:
+
+```text
+event_count = 0
+
+recorded_downtime_seconds = 0
+
+dominant_duration_reason = null
+
+most_frequent_reason = null
+
+by_reason = []
+```
+
+FactoryPulse therefore does not fabricate a cause when no downtime evidence exists.
+
+---
+
+## PostgreSQL Integration
+
+The existing production-line downtime analytics service already loads the relevant downtime events from PostgreSQL.
+
+The service now preserves the normalized events inside:
+
+```text
+ProductionLineDowntimeAnalyticsResult
+```
+
+alongside:
+
+```text
+run_count
+metrics
+events
+```
+
+Operational Intelligence reuses those events to calculate machine reason summaries.
+
+Conceptually:
+
+```text
+PostgreSQL
+    ↓
+Downtime Events
+    ↓
+Downtime Analytics Service
+    │
+    ├── aggregate downtime metrics
+    └── normalized analytics events
+                   ↓
+         Operational Intelligence
+                   ↓
+       Machine Reason Intelligence
+```
+
+---
+
+## No Additional Downtime Query
+
+Downtime Cause Intelligence does not execute another query to reload the same downtime events.
+
+The existing downtime analytics service already retrieved them.
+
+Operational Intelligence reuses:
+
+```text
+downtime_result.events
+```
+
+This avoids unnecessary duplicate database work and keeps the analytics semantics synchronized.
+
+---
+
+## Integration with Operational Priority
+
+Operational Priority Ranking answers:
+
+```text
+Which machine deserves operational attention first?
+```
+
+Downtime Cause Intelligence adds:
+
+```text
+Which recorded reasons are contributing to that machine's downtime?
+```
+
+Example:
+
+```text
+Priority #1
+Machine M-101
+
+Recorded downtime = 6.2 hours
+Failure count = 5
+MTBF = 7.4 hours
+
+Dominant duration reason:
+Motor Overheating
+3.4 hours
+
+Most frequent reason:
+Bearing Failure
+4 events
+```
+
+This provides substantially more operational context than a priority rank alone.
+
+---
+
+## API Integration
+
+Downtime Cause Intelligence is exposed through the existing endpoint:
+
+```http
+GET /production-lines/{production_line_id}/operational-intelligence
+```
+
+No additional API endpoint is required.
+
+The Operational Intelligence response now conceptually contains:
+
+```text
+Operational Intelligence
+│
+├── OEE
+│
+├── Operational Impact
+│
+├── Priority
+│
+└── Downtime Reasons
+    │
+    └── Machine
+        ├── event_count
+        ├── recorded_downtime_seconds
+        ├── dominant_duration_reason
+        ├── most_frequent_reason
+        │
+        └── by_reason
+            ├── reason
+            ├── event_count
+            ├── duration_seconds
+            ├── percentage
+            ├── planned_event_count
+            ├── planned_duration_seconds
+            ├── unplanned_event_count
+            └── unplanned_duration_seconds
+```
+
+---
+
+## Terminology: Reason vs Root Cause
+
+The current FactoryPulse model stores:
+
+```text
+DowntimeEvent.reason
+```
+
+This value may describe why the downtime was recorded, but it is not sufficient evidence that a formal root-cause investigation has verified the underlying technical cause.
+
+Therefore FactoryPulse currently uses terminology such as:
+
+```text
+recorded reason
+downtime reason
+dominant recorded reason
+```
+
+and avoids claiming:
+
+```text
+verified root cause
+```
+
+A future Root Cause Analysis domain could model that distinction explicitly.
+
+---
+
+## Testing
+
+Downtime Cause Intelligence is tested at multiple layers.
+
+### Pure Analytics
+
+Coverage includes:
+
+```text
+duration-based dominant reason
+frequency-based dominant reason
+reason normalization
+case-insensitive grouping
+whitespace normalization
+planned/unplanned separation
+empty machine history
+unspecified reasons
+machine isolation
+reason percentage
+```
+
+### PostgreSQL Integration
+
+Tests prove that real DowntimeEvent records are:
+
+```text
+loaded from the completed production-run cohort
+normalized
+grouped
+isolated by machine
+integrated into Operational Intelligence
+```
+
+A dedicated integration scenario verifies that:
+
+```text
+Motor Overheating
+=
+largest duration
+
+Bearing Failure
+=
+highest frequency
+```
+
+and that FactoryPulse correctly reports both independently.
+
+### API
+
+The HTTP contract verifies that:
+
+```text
+dominant_duration_reason
+most_frequent_reason
+reason durations
+reason event counts
+reason shares
+planned/unplanned breakdown
+```
+
+are correctly exposed by the Operational Intelligence endpoint.
+
+---
+
+## Regression Status
+
+After Downtime Cause Intelligence:
+
+```text
+254 tests passed
+```
+
+The complete FactoryPulse backend regression suite remained green.
+
+---
+
+## Current Operational Intelligence Capability
+
+FactoryPulse can now answer four progressively deeper production questions:
+
+```text
+1. How is the line performing?
+   ↓
+   OEE
+
+2. Which machines are contributing downtime and reliability problems?
+   ↓
+   Operational Impact
+
+3. Which machine deserves attention first?
+   ↓
+   Operational Priority Ranking
+
+4. What recorded reasons explain that machine's downtime?
+   ↓
+   Downtime Cause Intelligence
+```
+
+This creates the first substantial diagnostic chain in FactoryPulse AI.
+
+---
+
+## Current Limitations
+
+Recorded reason analytics are based on textual:
+
+```text
+DowntimeEvent.reason
+```
+
+values.
+
+The current system does not yet model:
+
+```text
+formal root-cause investigations
+failure-mode taxonomy
+cause hierarchy
+cause verification
+corrective-action effectiveness by cause
+machine component responsible for failure
+```
+
+Reason normalization currently handles case and surrounding whitespace but does not perform semantic matching.
+
+Therefore values such as:
+
+```text
+Motor Overheating
+Motor Overheat
+Overheated Motor
+```
+
+may still remain different reason groups.
+
+Automatic semantic consolidation should not be introduced without an auditable strategy.
+
+---
+
+## Future Extensions
+
+Potential extensions include:
+
+```text
+structured failure modes
+root-cause taxonomy
+component-level failures
+reason recurrence trends
+reason Pareto changes over time
+maintenance response by failure reason
+failure recurrence after maintenance
+AI-assisted cause suggestions
+```
+
+AI-generated cause suggestions should remain clearly distinguished from confirmed engineering root causes.
