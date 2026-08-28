@@ -4249,3 +4249,325 @@ async def test_operational_intelligence_api_rejects_period_without_completed_run
         "No completed production runs found "
         "for the selected period"
     )
+
+async def test_operational_intelligence_service_calculates_machine_downtime_reasons(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T16:00:00Z",
+        ideal_cycle_time_seconds=30.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    # -----------------------------------------------------
+    # Motor Overheating:
+    # 2 events
+    # 2 hours total
+    #
+    # Bearing Failure:
+    # 3 events
+    # 1.5 hours total
+    #
+    # Therefore:
+    # dominant duration reason = Motor Overheating
+    # most frequent reason = Bearing Failure
+    # -----------------------------------------------------
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Overheating",
+        category="unplanned",
+        started_at="2026-08-20T08:30:00Z",
+        ended_at="2026-08-20T09:30:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason=" motor overheating ",
+        category="unplanned",
+        started_at="2026-08-20T10:00:00Z",
+        ended_at="2026-08-20T11:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T11:30:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T12:30:00Z",
+        ended_at="2026-08-20T13:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T13:30:00Z",
+        ended_at="2026-08-20T14:00:00Z",
+        machine_id=machine_id,
+    )
+
+    async with AsyncSessionLocal() as db:
+        result = (
+            await calculate_production_line_operational_intelligence(
+                db,
+                line_id,
+            )
+        )
+
+    assert len(result.downtime_reasons) == 1
+
+    machine_reasons = result.downtime_reasons[0]
+
+    assert machine_reasons.machine_id == machine_id
+    assert machine_reasons.event_count == 5
+
+    assert (
+        machine_reasons.recorded_downtime_seconds
+        == pytest.approx(3.5 * 3600)
+    )
+
+    assert (
+        machine_reasons.dominant_duration_reason
+        == "Motor Overheating"
+    )
+
+    assert (
+        machine_reasons.most_frequent_reason
+        == "Bearing Failure"
+    )
+
+    assert len(machine_reasons.by_reason) == 2
+
+    motor = machine_reasons.by_reason[0]
+    bearing = machine_reasons.by_reason[1]
+
+    assert motor.reason == "Motor Overheating"
+    assert motor.event_count == 2
+
+    assert motor.duration_seconds == pytest.approx(
+        2 * 3600
+    )
+
+    assert motor.percentage == pytest.approx(
+        2 / 3.5
+    )
+
+    assert motor.unplanned_event_count == 2
+
+    assert (
+        motor.unplanned_duration_seconds
+        == pytest.approx(2 * 3600)
+    )
+
+    assert bearing.reason == "Bearing Failure"
+    assert bearing.event_count == 3
+
+    assert bearing.duration_seconds == pytest.approx(
+        1.5 * 3600
+    )
+
+    assert bearing.percentage == pytest.approx(
+        1.5 / 3.5
+    )
+
+    assert bearing.unplanned_event_count == 3
+
+
+async def test_operational_intelligence_api_returns_machine_downtime_reasons(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_production_test_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    line_id = hierarchy["production_line_id"]
+    machine_id = hierarchy["machine_id"]
+
+    production_run = await create_completed_line_analytics_run(
+        client,
+        auth_headers["admin"],
+        line_id,
+        started_at="2026-08-20T08:00:00Z",
+        ended_at="2026-08-20T16:00:00Z",
+        ideal_cycle_time_seconds=30.0,
+        total_quantity=500,
+        good_quantity=480,
+    )
+
+    # Motor Overheating:
+    # 2 events
+    # 2 hours total
+    #
+    # Bearing Failure:
+    # 3 events
+    # 1.5 hours total
+    #
+    # Duration leader != frequency leader.
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Motor Overheating",
+        category="unplanned",
+        started_at="2026-08-20T08:30:00Z",
+        ended_at="2026-08-20T09:30:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason=" motor overheating ",
+        category="unplanned",
+        started_at="2026-08-20T10:00:00Z",
+        ended_at="2026-08-20T11:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T11:30:00Z",
+        ended_at="2026-08-20T12:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T12:30:00Z",
+        ended_at="2026-08-20T13:00:00Z",
+        machine_id=machine_id,
+    )
+
+    await create_line_analytics_downtime(
+        client,
+        auth_headers["admin"],
+        production_run["id"],
+        reason="Bearing Failure",
+        category="unplanned",
+        started_at="2026-08-20T13:30:00Z",
+        ended_at="2026-08-20T14:00:00Z",
+        machine_id=machine_id,
+    )
+
+    response = await client.get(
+        (
+            f"/production-lines/{line_id}"
+            "/operational-intelligence"
+        ),
+        headers=auth_headers["admin"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert len(data["downtime_reasons"]) == 1
+
+    machine_reasons = data["downtime_reasons"][0]
+
+    assert machine_reasons["machine_id"] == machine_id
+    assert machine_reasons["event_count"] == 5
+
+    assert (
+        machine_reasons["recorded_downtime_seconds"]
+        == pytest.approx(3.5 * 3600)
+    )
+
+    assert (
+        machine_reasons["dominant_duration_reason"]
+        == "Motor Overheating"
+    )
+
+    assert (
+        machine_reasons["most_frequent_reason"]
+        == "Bearing Failure"
+    )
+
+    reasons = machine_reasons["by_reason"]
+
+    assert len(reasons) == 2
+
+    motor = reasons[0]
+    bearing = reasons[1]
+
+    assert motor["reason"] == "Motor Overheating"
+    assert motor["event_count"] == 2
+
+    assert motor["duration_seconds"] == pytest.approx(
+        2 * 3600
+    )
+
+    assert motor["percentage"] == pytest.approx(
+        2 / 3.5
+    )
+
+    assert motor["planned_event_count"] == 0
+    assert motor["planned_duration_seconds"] == 0.0
+
+    assert motor["unplanned_event_count"] == 2
+
+    assert (
+        motor["unplanned_duration_seconds"]
+        == pytest.approx(2 * 3600)
+    )
+
+    assert bearing["reason"] == "Bearing Failure"
+    assert bearing["event_count"] == 3
+
+    assert bearing["duration_seconds"] == pytest.approx(
+        1.5 * 3600
+    )
+
+    assert bearing["percentage"] == pytest.approx(
+        1.5 / 3.5
+    )
+
+    assert bearing["unplanned_event_count"] == 3

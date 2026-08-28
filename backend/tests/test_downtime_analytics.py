@@ -6,6 +6,7 @@ from app.production.downtime_analytics import (
     DowntimeAnalyticsError,
     DowntimeAnalyticsEvent,
     calculate_downtime_analytics,
+    calculate_machine_downtime_reason_analytics,
 )
 
 
@@ -282,3 +283,195 @@ def test_downtime_analytics_rejects_zero_recorded_duration() -> None:
                 )
             ]
         )
+
+def test_machine_downtime_reason_analytics_identifies_dominant_reasons() -> None:
+    events = [
+        DowntimeAnalyticsEvent(
+            reason="Motor Overheating",
+            category="unplanned",
+            started_at=dt(8),
+            ended_at=dt(9),
+            machine_id=1,
+        ),
+        DowntimeAnalyticsEvent(
+            reason=" motor overheating ",
+            category="unplanned",
+            started_at=dt(10),
+            ended_at=dt(11),
+            machine_id=1,
+        ),
+        DowntimeAnalyticsEvent(
+            reason="Bearing Failure",
+            category="unplanned",
+            started_at=dt(12),
+            ended_at=dt(12, 30),
+            machine_id=1,
+        ),
+        DowntimeAnalyticsEvent(
+            reason="Bearing Failure",
+            category="unplanned",
+            started_at=dt(13),
+            ended_at=dt(13, 30),
+            machine_id=1,
+        ),
+        DowntimeAnalyticsEvent(
+            reason="Bearing Failure",
+            category="unplanned",
+            started_at=dt(14),
+            ended_at=dt(14, 30),
+            machine_id=1,
+        ),
+        DowntimeAnalyticsEvent(
+            reason="Other Machine Failure",
+            category="unplanned",
+            started_at=dt(15),
+            ended_at=dt(16),
+            machine_id=2,
+        ),
+    ]
+
+    result = calculate_machine_downtime_reason_analytics(
+        events,
+        machine_id=1,
+    )
+
+    assert result.machine_id == 1
+    assert result.event_count == 5
+
+    assert result.recorded_downtime_seconds == pytest.approx(
+        3.5 * 3600
+    )
+
+    # Motor overheating has the greatest duration:
+    # 2h total.
+    assert result.dominant_duration_reason == (
+        "Motor Overheating"
+    )
+
+    # Bearing Failure happens three times.
+    assert result.most_frequent_reason == (
+        "Bearing Failure"
+    )
+
+    assert len(result.by_reason) == 2
+
+    motor = result.by_reason[0]
+    bearing = result.by_reason[1]
+
+    assert motor.reason == "Motor Overheating"
+    assert motor.event_count == 2
+
+    assert motor.duration_seconds == pytest.approx(
+        2 * 3600
+    )
+
+    assert motor.percentage == pytest.approx(
+        2 / 3.5
+    )
+
+    assert motor.unplanned_event_count == 2
+
+    assert motor.unplanned_duration_seconds == pytest.approx(
+        2 * 3600
+    )
+
+    assert motor.planned_event_count == 0
+    assert motor.planned_duration_seconds == 0.0
+
+    assert bearing.reason == "Bearing Failure"
+    assert bearing.event_count == 3
+
+    assert bearing.duration_seconds == pytest.approx(
+        1.5 * 3600
+    )
+
+
+def test_machine_downtime_reason_analytics_separates_categories() -> None:
+    events = [
+        DowntimeAnalyticsEvent(
+            reason="Maintenance",
+            category="planned",
+            started_at=dt(8),
+            ended_at=dt(9),
+            machine_id=1,
+        ),
+        DowntimeAnalyticsEvent(
+            reason="Maintenance",
+            category="unplanned",
+            started_at=dt(10),
+            ended_at=dt(10, 30),
+            machine_id=1,
+        ),
+    ]
+
+    result = calculate_machine_downtime_reason_analytics(
+        events,
+        machine_id=1,
+    )
+
+    maintenance = result.by_reason[0]
+
+    assert maintenance.event_count == 2
+
+    assert maintenance.duration_seconds == pytest.approx(
+        1.5 * 3600
+    )
+
+    assert maintenance.planned_event_count == 1
+    assert maintenance.planned_duration_seconds == pytest.approx(
+        1 * 3600
+    )
+
+    assert maintenance.unplanned_event_count == 1
+
+    assert (
+        maintenance.unplanned_duration_seconds
+        == pytest.approx(0.5 * 3600)
+    )
+
+
+def test_machine_downtime_reason_analytics_empty_machine() -> None:
+    events = [
+        DowntimeAnalyticsEvent(
+            reason="Motor Failure",
+            category="unplanned",
+            started_at=dt(8),
+            ended_at=dt(9),
+            machine_id=2,
+        )
+    ]
+
+    result = calculate_machine_downtime_reason_analytics(
+        events,
+        machine_id=1,
+    )
+
+    assert result.event_count == 0
+    assert result.recorded_downtime_seconds == 0.0
+
+    assert result.dominant_duration_reason is None
+    assert result.most_frequent_reason is None
+
+    assert result.by_reason == ()
+
+
+def test_machine_downtime_reason_analytics_uses_unspecified_reason() -> None:
+    events = [
+        DowntimeAnalyticsEvent(
+            reason="   ",
+            category="unplanned",
+            started_at=dt(8),
+            ended_at=dt(9),
+            machine_id=1,
+        )
+    ]
+
+    result = calculate_machine_downtime_reason_analytics(
+        events,
+        machine_id=1,
+    )
+
+    assert result.dominant_duration_reason == "Unspecified"
+    assert result.most_frequent_reason == "Unspecified"
+
+    assert result.by_reason[0].reason == "Unspecified"

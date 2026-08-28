@@ -15,6 +15,8 @@ from app.schemas.production_analytics import (
     ProductionLineOEEResponse,
 )
 from app.schemas.operational_intelligence import (
+    MachineDowntimeReasonBreakdownResponse,
+    MachineDowntimeReasonSummaryResponse,
     OperationalDowntimeSummaryResponse,
     OperationalMachineImpactResponse,
     OperationalMachinePriorityResponse,
@@ -365,6 +367,7 @@ async def get_production_line_operational_intelligence_endpoint(
     oee = result.oee
     impact = result.operational_impact
     priority = result.priority
+    downtime_reasons = result.downtime_reasons
 
     return ProductionLineOperationalIntelligenceResponse(
         production_line_id=production_line_id,
@@ -470,6 +473,45 @@ async def get_production_line_operational_intelligence_endpoint(
                 for machine in priority.machines
             ],
         ),
+        downtime_reasons=[
+            MachineDowntimeReasonSummaryResponse(
+                machine_id=machine.machine_id,
+                event_count=machine.event_count,
+                recorded_downtime_seconds=(
+                    machine.recorded_downtime_seconds
+                ),
+                dominant_duration_reason=(
+                    machine.dominant_duration_reason
+                ),
+                most_frequent_reason=(
+                    machine.most_frequent_reason
+                ),
+                by_reason=[
+                    MachineDowntimeReasonBreakdownResponse(
+                        reason=reason.reason,
+                        event_count=reason.event_count,
+                        duration_seconds=(
+                            reason.duration_seconds
+                        ),
+                        percentage=reason.percentage,
+                        planned_event_count=(
+                            reason.planned_event_count
+                        ),
+                        planned_duration_seconds=(
+                            reason.planned_duration_seconds
+                        ),
+                        unplanned_event_count=(
+                            reason.unplanned_event_count
+                        ),
+                        unplanned_duration_seconds=(
+                            reason.unplanned_duration_seconds
+                        ),
+                    )
+                    for reason in machine.by_reason
+                ],
+            )
+            for machine in downtime_reasons
+        ],
     )
 
 

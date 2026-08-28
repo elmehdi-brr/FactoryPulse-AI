@@ -8,6 +8,8 @@ from app.models.machine import Machine
 from app.production.analytics import AggregatedOEEMetrics
 from app.production.downtime_analytics import (
     DowntimeAnalyticsMetrics,
+    MachineDowntimeReasonSummary,
+    calculate_machine_downtime_reason_analytics,
 )
 from app.production.operational_intelligence import (
     MachineReliabilitySnapshot,
@@ -48,6 +50,11 @@ class ProductionLineOperationalIntelligenceResult:
     downtime: DowntimeAnalyticsMetrics
     operational_impact: OperationalDowntimeSummary
     priority: OperationalPrioritySummary
+
+    downtime_reasons: tuple[
+        MachineDowntimeReasonSummary,
+        ...,
+    ]
 
 
 def validate_operational_intelligence_period(
@@ -158,6 +165,14 @@ async def calculate_production_line_operational_intelligence(
             operational_impact.machines
         )
 
+        downtime_reasons = tuple(
+            calculate_machine_downtime_reason_analytics(
+                downtime_result.events,
+                machine.id,
+            )
+        for machine in machines
+        )
+
     except (
         ProductionAnalyticsServiceError,
         DowntimeAnalyticsServiceError,
@@ -177,4 +192,5 @@ async def calculate_production_line_operational_intelligence(
         downtime=downtime_result.metrics,
         operational_impact=operational_impact,
         priority=priority,
+        downtime_reasons=downtime_reasons,
     )

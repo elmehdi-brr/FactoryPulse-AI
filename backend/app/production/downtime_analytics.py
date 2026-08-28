@@ -43,6 +43,36 @@ class DowntimeMachineBreakdown:
 
 
 @dataclass(frozen=True, slots=True)
+class MachineDowntimeReasonBreakdown:
+    reason: str
+
+    event_count: int
+    duration_seconds: float
+    percentage: float
+
+    planned_event_count: int
+    planned_duration_seconds: float
+
+    unplanned_event_count: int
+    unplanned_duration_seconds: float
+
+
+@dataclass(frozen=True, slots=True)
+class MachineDowntimeReasonSummary:
+    machine_id: int
+
+    event_count: int
+    recorded_downtime_seconds: float
+
+    dominant_duration_reason: str | None
+    most_frequent_reason: str | None
+
+    by_reason: tuple[
+        MachineDowntimeReasonBreakdown,
+        ...,
+    ]
+
+@dataclass(frozen=True, slots=True)
 class DowntimeAnalyticsMetrics:
     event_count: int
 
@@ -221,4 +251,152 @@ def calculate_downtime_analytics(
         ),
         by_reason=tuple(reason_breakdown),
         by_machine=tuple(machine_breakdown),
+    )
+
+def calculate_machine_downtime_reason_analytics(
+    events: Sequence[DowntimeAnalyticsEvent],
+    machine_id: int,
+) -> MachineDowntimeReasonSummary:
+    reason_data: dict[
+        str,
+        dict[str, float | int | str],
+    ] = {}
+
+    machine_event_count = 0
+    machine_recorded_downtime_seconds = 0.0
+
+    for event in events:
+        if event.machine_id != machine_id:
+            continue
+
+        if event.category not in {
+            "planned",
+            "unplanned",
+        }:
+            raise DowntimeAnalyticsError(
+                "Unsupported downtime category"
+            )
+
+        if event.ended_at is None:
+            raise DowntimeAnalyticsError(
+                "Open downtime events cannot be used "
+                "for downtime reason analytics"
+            )
+
+        if event.ended_at < event.started_at:
+            raise DowntimeAnalyticsError(
+                "Downtime ended_at cannot be earlier "
+                "than started_at"
+            )
+
+        duration_seconds = (
+            event.ended_at - event.started_at
+        ).total_seconds()
+
+        cleaned_reason = event.reason.strip()
+
+        if not cleaned_reason:
+            cleaned_reason = "Unspecified"
+
+        reason_key = cleaned_reason.casefold()
+
+        if reason_key not in reason_data:
+            reason_data[reason_key] = {
+                "reason": cleaned_reason,
+                "event_count": 0,
+                "duration_seconds": 0.0,
+                "planned_event_count": 0,
+                "planned_duration_seconds": 0.0,
+                "unplanned_event_count": 0,
+                "unplanned_duration_seconds": 0.0,
+            }
+
+        values = reason_data[reason_key]
+
+        values["event_count"] += 1
+        values["duration_seconds"] += duration_seconds
+
+        if event.category == "planned":
+            values["planned_event_count"] += 1
+            values["planned_duration_seconds"] += (
+                duration_seconds
+            )
+        else:
+            values["unplanned_event_count"] += 1
+            values["unplanned_duration_seconds"] += (
+                duration_seconds
+            )
+
+        machine_event_count += 1
+        machine_recorded_downtime_seconds += (
+            duration_seconds
+        )
+
+    if machine_event_count == 0:
+        return MachineDowntimeReasonSummary(
+            machine_id=machine_id,
+            event_count=0,
+            recorded_downtime_seconds=0.0,
+            dominant_duration_reason=None,
+            most_frequent_reason=None,
+            by_reason=(),
+        )
+
+    by_reason = [
+        MachineDowntimeReasonBreakdown(
+            reason=str(values["reason"]),
+            event_count=int(values["event_count"]),
+            duration_seconds=float(
+                values["duration_seconds"]
+            ),
+            percentage=(
+                float(values["duration_seconds"])
+                / machine_recorded_downtime_seconds
+            ),
+            planned_event_count=int(
+                values["planned_event_count"]
+            ),
+            planned_duration_seconds=float(
+                values["planned_duration_seconds"]
+            ),
+            unplanned_event_count=int(
+                values["unplanned_event_count"]
+            ),
+            unplanned_duration_seconds=float(
+                values["unplanned_duration_seconds"]
+            ),
+        )
+        for values in reason_data.values()
+    ]
+
+    by_reason.sort(
+        key=lambda item: (
+            -item.duration_seconds,
+            -item.event_count,
+            item.reason.casefold(),
+        )
+    )
+
+    frequency_order = sorted(
+        by_reason,
+        key=lambda item: (
+            -item.event_count,
+            -item.duration_seconds,
+            item.reason.casefold(),
+        ),
+    )
+
+    return MachineDowntimeReasonSummary(
+        machine_id=machine_id,
+        event_count=machine_event_count,
+        recorded_downtime_seconds=(
+            machine_recorded_downtime_seconds
+        ),
+        dominant_duration_reason=(
+            by_reason[0].reason
+        ),
+        most_frequent_reason=(
+            frequency_order[0].reason
+        ),
+        by_reason=tuple(by_reason),
     )

@@ -51,6 +51,34 @@ class OperationalPrioritySummaryResponse(BaseModel):
     machines: list[OperationalMachinePriorityResponse]
 
 
+class MachineDowntimeReasonBreakdownResponse(BaseModel):
+    reason: str
+
+    event_count: int
+    duration_seconds: float
+    percentage: float
+
+    planned_event_count: int
+    planned_duration_seconds: float
+
+    unplanned_event_count: int
+    unplanned_duration_seconds: float
+
+
+class MachineDowntimeReasonSummaryResponse(BaseModel):
+    machine_id: int
+
+    event_count: int
+    recorded_downtime_seconds: float
+
+    dominant_duration_reason: str | None
+    most_frequent_reason: str | None
+
+    by_reason: list[
+        MachineDowntimeReasonBreakdownResponse
+    ]
+
+
 class OperationalOEEResponse(BaseModel):
     run_count: int
 
@@ -82,3 +110,7 @@ class ProductionLineOperationalIntelligenceResponse(BaseModel):
     oee: OperationalOEEResponse
     operational_impact: OperationalDowntimeSummaryResponse
     priority: OperationalPrioritySummaryResponse
+
+    downtime_reasons: list[
+        MachineDowntimeReasonSummaryResponse
+    ]
