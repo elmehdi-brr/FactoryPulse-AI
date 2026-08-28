@@ -2392,3 +2392,925 @@ Machine Reliability Analytics backend milestone:
 - PostgreSQL integration tests ✅
 - API tests ✅
 - Full regression suite ✅
+
+
+---
+
+# Operational Intelligence
+
+## Overview
+
+Operational Intelligence connects the production, downtime, and machine reliability layers into a single explainable production-line report.
+
+The goal is to move FactoryPulse AI beyond isolated metrics such as OEE, MTBF, MTTR, and downtime totals and begin answering higher-level operational questions such as:
+
+- Which machines are contributing the most recorded downtime burden?
+- Which machine should operations investigate first?
+- How is production performance related to machine reliability?
+- How much downtime is associated with machines versus line-wide events?
+- What are the reliability characteristics of each machine on the production line?
+
+The first Operational Intelligence vertical slice deliberately remains deterministic and explainable. It does not introduce an arbitrary AI-generated health score.
+
+---
+
+## Architecture
+
+The Operational Intelligence layer composes existing analytics rather than duplicating their calculation logic.
+
+```text
+Production Line
+│
+├── Production Runs
+│      │
+│      └── OEE Analytics
+│
+├── Downtime Events
+│      │
+│      └── Downtime Analytics
+│
+└── Machines
+       │
+       └── Machine Reliability
+               │
+               ├── Failure Count
+               ├── MTTR
+               ├── Operating Exposure
+               └── MTBF
+
+                ↓
+
+      Operational Intelligence
+      
+```
+
+
+Main implementation files:
+
+```
+app/production/operational_intelligence.py
+app/services/operational_intelligence_service.py
+app/schemas/operational_intelligence.py
+app/api/production_lines.py
+```
+
+Tests:
+
+```
+tests/test_operational_intelligence.py
+tests/test_production_oee_foundation.py
+```
+
+---
+
+## Pure Operational Intelligence Layer
+
+The pure analytics layer is implemented in:
+
+```
+app/production/operational_intelligence.py
+```
+
+It does not access PostgreSQL or FastAPI directly.
+
+### MachineReliabilitySnapshot
+
+Represents the reliability information required for one machine:
+
+```
+machine_id
+machine_name
+machine_code
+
+failure_count
+mttr_seconds
+operating_exposure_seconds
+mtbf_seconds
+```
+
+### MachineOperationalImpact
+
+Combines reliability with recorded downtime burden:
+
+```
+machine_id
+machine_name
+machine_code
+
+recorded_downtime_event_count
+recorded_downtime_seconds
+recorded_downtime_share
+
+failure_count
+mttr_seconds
+operating_exposure_seconds
+mtbf_seconds
+```
+
+### OperationalDowntimeSummary
+
+Represents the line-level downtime attribution result:
+
+```
+recorded_downtime_seconds
+
+machine_attributed_recorded_downtime_seconds
+unattributed_recorded_downtime_seconds
+
+machine_attributed_share
+unattributed_share
+
+top_downtime_machine_id
+
+machines
+```
+
+---
+
+## Important Downtime Semantics
+
+Operational Intelligence intentionally distinguishes between:
+
+```
+Unique elapsed downtime
+```
+
+and:
+
+```
+Recorded downtime burden
+```
+
+They represent different concepts and must not be mixed.
+
+---
+
+## Unique Elapsed Downtime
+
+Unique elapsed downtime is used by OEE and production-time calculations.
+
+Example:
+
+```
+Machine A:
+09:00 → 10:00
+
+Machine B:
+09:30 → 10:30
+```
+
+The two events overlap for 30 minutes.
+
+Actual unique elapsed downtime is:
+
+```
+09:00 → 10:30
+=
+1.5 hours
+```
+
+It is not two hours.
+
+This prevents overlapping downtime events from artificially reducing operating time more than once.
+
+---
+
+## Recorded Downtime Burden
+
+Downtime attribution analytics measure recorded event duration.
+
+Using the same example:
+
+```
+Machine A recorded duration = 1 hour
+Machine B recorded duration = 1 hour
+```
+
+Recorded burden:
+
+```
+2 hours
+```
+
+This metric answers:
+
+> How much recorded downtime-event burden is associated with each machine?
+
+It does not claim that each machine independently caused that amount of unique production loss.
+
+This distinction is necessary because simultaneous machine events may overlap.
+
+---
+
+## Recorded Downtime Share
+
+For each machine:
+
+```
+recorded_downtime_share =
+machine recorded downtime duration
+/
+total recorded downtime-event duration
+```
+
+Example:
+
+```
+Machine A = 1.5 hours
+Machine B = 1.0 hour
+Line-wide events = 1.0 hour
+
+Total recorded downtime burden = 3.5 hours
+```
+
+Therefore:
+
+```
+Machine A share = 1.5 / 3.5
+Machine B share = 1.0 / 3.5
+Unattributed share = 1.0 / 3.5
+```
+
+The percentages remain mathematically consistent because the numerator and denominator use the same recorded-event-duration semantics.
+
+---
+
+## Machine-Attributed and Unattributed Downtime
+
+A DowntimeEvent may have:
+
+```
+machine_id = <machine>
+```
+
+or:
+
+```
+machine_id = NULL
+```
+
+A machine-linked event contributes to:
+
+```
+machine_attributed_recorded_downtime_seconds
+```
+
+A line-wide event with no machine contributes to:
+
+```
+unattributed_recorded_downtime_seconds
+```
+
+Examples of line-wide events may include:
+
+```
+changeover
+line-wide setup
+general production interruption
+site or line-level event
+```
+
+---
+
+## Top Downtime Machine
+
+Machines are ranked primarily by:
+
+```
+recorded_downtime_seconds descending
+```
+
+Tie-breaking uses:
+
+```
+failure_count descending
+machine_code
+machine_id
+```
+
+The machine with the highest positive recorded downtime burden becomes:
+
+```
+top_downtime_machine_id
+```
+
+If no machine has recorded downtime:
+
+```
+top_downtime_machine_id = null
+```
+
+Machines with zero downtime are still included in the report.
+
+This is important because the report represents the production line's machine population, not only problematic machines.
+
+---
+
+## PostgreSQL Orchestration Service
+
+The orchestration layer is implemented in:
+
+```
+app/services/operational_intelligence_service.py
+```
+
+It composes three existing analytics systems:
+
+```
+calculate_production_line_oee()
++
+calculate_production_line_downtime_analytics()
++
+calculate_machine_reliability()
+```
+
+The service first retrieves all machines assigned to the production line.
+
+For each machine it calculates:
+
+```
+failure_count
+MTTR
+operating exposure
+MTBF
+```
+
+The resulting reliability information is then combined with the downtime analytics breakdown by the pure Operational Intelligence layer.
+
+---
+
+## Reuse Instead of Duplication
+
+Operational Intelligence intentionally reuses the existing OEE, downtime, and reliability services.
+
+This avoids introducing a second implementation of:
+
+```
+OEE calculations
+downtime duration calculations
+failure definitions
+MTTR calculations
+operating exposure calculations
+MTBF calculations
+```
+
+Therefore the new report uses the same semantics already validated elsewhere in FactoryPulse AI.
+
+---
+
+## Reporting Period
+
+The endpoint supports:
+
+```
+start_at
+end_at
+```
+
+The reporting period is passed to the existing production and reliability analytics services.
+
+The selected production cohort consists of completed production runs that satisfy the existing production analytics period rules.
+
+Invalid ranges where:
+
+```
+end_at <= start_at
+```
+
+are rejected.
+
+If no completed production runs exist in the selected period, Operational Intelligence cannot calculate the production report and returns an error.
+
+---
+
+## API
+
+Endpoint:
+
+```
+GET /production-lines/{production_line_id}/operational-intelligence
+```
+
+Optional query parameters:
+
+```
+start_at
+end_at
+```
+
+All authenticated FactoryPulse roles may read Operational Intelligence analytics.
+
+Current roles:
+
+```
+admin
+manager
+technician
+operator
+```
+
+The endpoint follows the same read-access policy as the existing OEE, downtime, reliability, and maintenance analytics endpoints.
+
+---
+
+## API Response Structure
+
+Conceptually:
+
+```
+ProductionLineOperationalIntelligenceResponse
+│
+├── production_line_id
+├── start_at
+├── end_at
+├── run_count
+│
+├── oee
+│      ├── run_count
+│      ├── scheduled_time_seconds
+│      ├── planned_downtime_seconds
+│      ├── planned_production_time_seconds
+│      ├── unplanned_downtime_seconds
+│      ├── operating_time_seconds
+│      ├── total_quantity
+│      ├── good_quantity
+│      ├── availability
+│      ├── performance
+│      ├── quality
+│      └── oee
+│
+└── operational_impact
+       ├── recorded_downtime_seconds
+       ├── machine_attributed_recorded_downtime_seconds
+       ├── unattributed_recorded_downtime_seconds
+       ├── machine_attributed_share
+       ├── unattributed_share
+       ├── top_downtime_machine_id
+       │
+       └── machines
+              ├── machine_id
+              ├── machine_name
+              ├── machine_code
+              ├── recorded_downtime_event_count
+              ├── recorded_downtime_seconds
+              ├── recorded_downtime_share
+              ├── failure_count
+              ├── mttr_seconds
+              ├── operating_exposure_seconds
+              └── mtbf_seconds
+```
+
+---
+
+## Example
+
+Consider an eight-hour completed production run:
+
+```
+08:00 → 16:00
+```
+
+Events:
+
+```
+Machine A failure:
+09:00 → 10:00
+
+Machine B failure:
+09:30 → 10:30
+
+Line-wide planned changeover:
+12:00 → 13:00
+
+Machine A failure:
+14:00 → 14:30
+```
+
+### OEE Time Semantics
+
+Unique unplanned downtime:
+
+```
+09:00 → 10:30 = 1.5 hours
+14:00 → 14:30 = 0.5 hours
+
+Total = 2 hours
+```
+
+Planned downtime:
+
+```
+1 hour
+```
+
+Therefore:
+
+```
+Scheduled time = 8 hours
+
+Planned production time =
+8h - 1h
+=
+7h
+
+Operating time =
+7h - 2h
+=
+5h
+```
+
+---
+
+## Recorded Downtime Burden for the Same Example
+
+Recorded event durations:
+
+```
+Machine A =
+1h + 0.5h
+=
+1.5h
+
+Machine B =
+1h
+
+Line-wide =
+1h
+```
+
+Total recorded burden:
+
+```
+3.5 hours
+```
+
+This differs from unique elapsed downtime because overlapping machine events are intentionally preserved for burden attribution.
+
+---
+
+## Reliability Integration
+
+For the same machine population, Operational Intelligence exposes existing Machine Reliability metrics.
+
+Example:
+
+```
+Machine A
+
+failure_count = 2
+failure downtime = 1.5h
+
+MTTR =
+1.5h / 2
+=
+45 minutes
+```
+
+If operating exposure is five hours:
+
+```
+MTBF =
+5h / 2
+=
+2.5 hours
+```
+
+Machine B:
+
+```
+failure_count = 1
+MTTR = 1 hour
+operating exposure = 5 hours
+MTBF = 5 hours
+```
+
+This allows production performance and machine reliability to appear in one operational report.
+
+---
+
+## Error Handling
+
+The endpoint returns:
+
+```
+404
+```
+
+when the production line does not exist.
+
+It returns:
+
+```
+422
+```
+
+for analytics-domain errors such as:
+
+```
+invalid reporting period
+no completed production runs
+unsupported underlying analytics condition
+```
+
+---
+
+## RBAC
+
+Operational Intelligence is currently read-only.
+
+Allowed roles:
+
+```
+admin
+manager
+technician
+operator
+```
+
+No new write permissions are introduced by this milestone.
+
+---
+
+## Testing
+
+Operational Intelligence is tested at multiple levels.
+
+### Pure Analytics Tests
+
+```
+tests/test_operational_intelligence.py
+```
+
+Coverage includes:
+
+```
+machine downtime burden calculation
+machine ranking
+machine with zero downtime
+empty downtime history
+nullable shares
+duplicate machine ID rejection
+```
+
+### PostgreSQL Integration Tests
+
+Coverage includes:
+
+```
+OEE integration
+overlapping machine downtime
+line-wide downtime
+machine reliability integration
+MTTR
+MTBF
+operating exposure
+machine population with zero-downtime machine
+invalid reporting period
+```
+
+### API Tests
+
+Coverage includes:
+
+```
+complete report response
+OEE values
+recorded downtime attribution
+machine ranking
+reliability metrics
+RBAC for all authenticated roles
+missing production line
+invalid date range
+period without completed production runs
+```
+
+---
+
+## Regression Status
+
+After the first Operational Intelligence vertical slice:
+
+```
+243 tests passed
+```
+
+The complete backend regression suite remained green.
+
+---
+
+## Current Limitations
+
+The current Operational Intelligence report deliberately does not claim exact production-loss attribution to individual machines.
+
+Because machine downtime events may overlap, recorded machine downtime burden is not equivalent to unique lost production time.
+
+For example:
+
+```
+Machine A = 1 hour
+Machine B = 1 hour
+
+with 30 minutes overlap
+```
+
+does not imply two hours of production loss.
+
+Therefore FactoryPulse currently reports:
+
+```
+recorded_downtime_share
+```
+
+rather than:
+
+```
+production_loss_share
+```
+
+This naming is intentional.
+
+---
+
+## Performance Consideration
+
+The initial orchestration service calculates machine reliability separately for each machine.
+
+Conceptually:
+
+```
+line machines
+    ↓
+for each machine
+    ↓
+calculate machine reliability
+```
+
+This maximizes reuse and correctness for the first implementation.
+
+For large production lines, this may later be optimized using bulk PostgreSQL queries while preserving the same domain models and API contract.
+
+---
+
+## Future Operational Intelligence Extensions
+
+Potential next capabilities include:
+
+### Operational Priority Ranking
+
+Combine explainable operational metrics to identify which machines deserve attention first.
+
+Potential inputs:
+
+```
+recorded downtime burden
+failure count
+MTTR
+MTBF
+production context
+```
+
+Any priority model should remain explainable.
+
+---
+
+### Downtime Cause Intelligence
+
+Connect:
+
+```
+machine
++
+reason
++
+frequency
++
+duration
+```
+
+to identify recurring dominant causes.
+
+---
+
+### Production Loss Estimation
+
+Use production context such as:
+
+```
+ideal cycle time
+downtime duration
+production rate
+```
+
+to estimate theoretical lost production opportunity.
+
+This must be clearly distinguished from confirmed physical production loss.
+
+---
+
+### Maintenance and Reliability Correlation
+
+Future data-model improvements could allow:
+
+```
+DowntimeEvent
+    ↓
+MaintenanceRecord
+```
+
+This would enable analysis such as:
+
+```
+repeated failure after maintenance
+MTBF before versus after maintenance
+repair effectiveness
+failure recurrence
+maintenance impact on reliability
+```
+
+The current MaintenanceRecord model does not yet directly reference a DowntimeEvent, so FactoryPulse does not fabricate these relationships.
+
+---
+
+### Trend Analytics
+
+Future reports may compare:
+
+```
+current period
+vs
+previous period
+```
+
+for:
+
+```
+OEE
+downtime
+failure count
+MTBF
+MTTR
+maintenance response
+```
+
+---
+
+### Operational Recommendations
+
+Once sufficient reliable metrics exist, FactoryPulse AI may produce explainable recommendations such as:
+
+```
+Machine M-101 has the largest recorded downtime burden
+and the lowest MTBF on Line A.
+
+Recommended operational focus:
+inspect recurring failure causes and recent corrective maintenance.
+```
+
+Recommendations should always remain traceable to the underlying industrial data.
+
+---
+
+## Current Operational Intelligence Flow
+
+```
+Organization
+    ↓
+Site
+    ↓
+Area
+    ↓
+Production Line
+    │
+    ├── Production Runs
+    │       ↓
+    │      OEE
+    │
+    ├── Downtime Events
+    │       ↓
+    │   Downtime Analytics
+    │
+    └── Machines
+            ↓
+       Reliability Analytics
+            │
+            ├── Failures
+            ├── MTTR
+            ├── Operating Exposure
+            └── MTBF
+
+                ↓
+
+       Operational Intelligence
+
+                ↓
+
+Production Performance
++
+Downtime Attribution
++
+Machine Reliability
++
+Operational Prioritization Foundation
+```
+
+Operational Intelligence is therefore the first FactoryPulse layer that deliberately combines multiple previously independent industrial analytics domains into one production-management view.
