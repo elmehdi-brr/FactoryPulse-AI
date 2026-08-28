@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
 
 from app.api.dependencies import require_roles
 from app.core.rbac import ALL_ROLES, TECHNICAL_WRITE_ROLES
@@ -10,6 +11,7 @@ from app.schemas.maintenance_record import (
     MaintenanceRecordResponse,
     MaintenanceRecordUpdate,
 )
+from app.schemas.maintenance_analytics import MaintenanceEffectivenessResponse
 from app.services.alert_service import get_alert_by_id
 from app.services.machine_service import get_machine_by_id
 from app.services.maintenance_record_service import (
@@ -18,6 +20,11 @@ from app.services.maintenance_record_service import (
     get_maintenance_records,
     get_maintenance_records_by_machine,
     update_maintenance_record,
+)
+from app.services.maintenance_analytics_service import (
+    MaintenanceAnalyticsServiceError,
+    calculate_machine_maintenance_effectiveness,
+    calculate_machine_maintenance_response,
 )
 from app.services.sensor_service import get_sensor_by_id
 from app.services.user_service import get_user_by_id
@@ -133,6 +140,99 @@ async def get_machine_maintenance_records_endpoint(
         )
 
     return await get_maintenance_records_by_machine(db, machine_id)
+
+
+@router.get(
+    "/machines/{machine_id}/maintenance-analytics",
+    response_model=MaintenanceEffectivenessResponse,
+)
+async def get_machine_maintenance_analytics_endpoint(
+    machine_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
+) -> MaintenanceEffectivenessResponse:
+    machine = await get_machine_by_id(
+        db,
+        machine_id,
+    )
+
+    if machine is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Machine not found",
+        )
+
+    try:
+        metrics = await calculate_machine_maintenance_effectiveness(
+            db,
+            machine_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+        response_metrics = await calculate_machine_maintenance_response(
+            db,
+            machine_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+
+    except MaintenanceAnalyticsServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    return MaintenanceEffectivenessResponse(
+        machine_id=machine_id,
+        start_at=start_at,
+        end_at=end_at,
+
+        total_records=metrics.total_records,
+
+        preventive_count=metrics.preventive_count,
+        corrective_count=metrics.corrective_count,
+        preventive_share=metrics.preventive_share,
+
+        planned_count=metrics.planned_count,
+        in_progress_count=metrics.in_progress_count,
+        completed_count=metrics.completed_count,
+        verified_count=metrics.verified_count,
+        cancelled_count=metrics.cancelled_count,
+
+        finished_count=metrics.finished_count,
+        completion_rate=metrics.completion_rate,
+        verification_rate=metrics.verification_rate,
+
+        alert_linked_count=metrics.alert_linked_count,
+        alert_link_rate=metrics.alert_link_rate,
+
+        assigned_count=metrics.assigned_count,
+        assignment_rate=metrics.assignment_rate,
+
+        total_alerts=response_metrics.total_alerts,
+        responded_alert_count=(
+            response_metrics.responded_alert_count
+        ),
+        unresponded_alert_count=(
+            response_metrics.unresponded_alert_count
+        ),
+        response_rate=response_metrics.response_rate,
+
+        average_response_time_seconds=(
+            response_metrics.average_response_time_seconds
+        ),
+        median_response_time_seconds=(
+            response_metrics.median_response_time_seconds
+        ),
+        fastest_response_time_seconds=(
+            response_metrics.fastest_response_time_seconds
+        ),
+        slowest_response_time_seconds=(
+            response_metrics.slowest_response_time_seconds
+        ),
+    )
 
 
 @router.patch(
