@@ -32,6 +32,25 @@ class OperationalDowntimeSummaryResponse(BaseModel):
     machines: list[OperationalMachineImpactResponse]
 
 
+class OperationalMachinePriorityResponse(BaseModel):
+    machine_id: int
+    machine_name: str
+    machine_code: str
+
+    priority_rank: int | None
+
+    downtime_rank: int | None
+    failure_rank: int | None
+    mttr_rank: int | None
+    mtbf_rank: int | None
+
+
+class OperationalPrioritySummaryResponse(BaseModel):
+    top_priority_machine_id: int | None
+
+    machines: list[OperationalMachinePriorityResponse]
+
+
 class OperationalOEEResponse(BaseModel):
     run_count: int
 
@@ -62,3 +81,4 @@ class ProductionLineOperationalIntelligenceResponse(BaseModel):
 
     oee: OperationalOEEResponse
     operational_impact: OperationalDowntimeSummaryResponse
+    priority: OperationalPrioritySummaryResponse

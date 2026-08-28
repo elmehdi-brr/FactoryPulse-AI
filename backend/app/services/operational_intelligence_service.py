@@ -14,6 +14,8 @@ from app.production.operational_intelligence import (
     OperationalDowntimeSummary,
     OperationalIntelligenceError,
     calculate_operational_downtime_impact,
+    OperationalPrioritySummary,
+    calculate_operational_priority,
 )
 from app.services.downtime_analytics_service import (
     DowntimeAnalyticsServiceError,
@@ -45,6 +47,7 @@ class ProductionLineOperationalIntelligenceResult:
     oee: AggregatedOEEMetrics
     downtime: DowntimeAnalyticsMetrics
     operational_impact: OperationalDowntimeSummary
+    priority: OperationalPrioritySummary
 
 
 def validate_operational_intelligence_period(
@@ -151,6 +154,9 @@ async def calculate_production_line_operational_intelligence(
                 machine_snapshots,
             )
         )
+        priority = calculate_operational_priority(
+            operational_impact.machines
+        )
 
     except (
         ProductionAnalyticsServiceError,
@@ -170,4 +176,5 @@ async def calculate_production_line_operational_intelligence(
         oee=oee_metrics,
         downtime=downtime_result.metrics,
         operational_impact=operational_impact,
+        priority=priority,
     )

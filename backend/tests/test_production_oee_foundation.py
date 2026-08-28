@@ -3569,6 +3569,59 @@ async def test_operational_intelligence_service_combines_line_and_machine_metric
         5 / 7
     )
 
+        # -----------------------------------------------------
+    # Operational priority ranking
+    #
+    # Machine A:
+    # downtime rank = 1
+    # failure rank = 1
+    # MTTR rank = 2
+    # MTBF rank = 1
+    #
+    # Aggregate rank value = 5
+    #
+    # Machine B:
+    # downtime rank = 2
+    # failure rank = 2
+    # MTTR rank = 1
+    # MTBF rank = 2
+    #
+    # Aggregate rank value = 7
+    #
+    # Therefore Machine A is priority #1.
+    # -----------------------------------------------------
+
+    priority = result.priority
+
+    assert priority.top_priority_machine_id == machine_a_id
+
+    assert len(priority.machines) == 2
+
+    priority_a = next(
+        machine
+        for machine in priority.machines
+        if machine.machine_id == machine_a_id
+    )
+
+    priority_b = next(
+        machine
+        for machine in priority.machines
+        if machine.machine_id == machine_b_id
+    )
+
+    assert priority_a.priority_rank == 1
+    assert priority_a.downtime_rank == 1
+    assert priority_a.failure_rank == 1
+    assert priority_a.mttr_rank == 2
+    assert priority_a.mtbf_rank == 1
+
+    assert priority_b.priority_rank == 2
+    assert priority_b.downtime_rank == 2
+    assert priority_b.failure_rank == 2
+    assert priority_b.mttr_rank == 1
+    assert priority_b.mtbf_rank == 2
+
+
     # ideal production time:
     # 600 units * 30 sec = 18,000 sec = 5h
     #
@@ -3768,6 +3821,29 @@ async def test_operational_intelligence_service_includes_machine_without_downtim
     )
 
     assert machine_b.mtbf_seconds is None
+
+    priority_healthy = next(
+        machine
+        for machine in result.priority.machines
+        if machine.machine_id == machine_b_id
+    )
+
+    priority_failed = next(
+        machine
+        for machine in result.priority.machines
+        if machine.machine_id == hierarchy["machine_id"]
+    )
+
+    assert (
+        result.priority.top_priority_machine_id
+        == hierarchy["machine_id"]
+    )
+
+    assert priority_failed.priority_rank == 1
+
+    assert priority_healthy.priority_rank == 2
+    assert priority_healthy.mttr_rank is None
+    assert priority_healthy.mtbf_rank is None
 
 
 async def test_operational_intelligence_service_rejects_invalid_date_range(
@@ -4031,6 +4107,40 @@ async def test_operational_intelligence_api_returns_complete_report(
     assert machine_b["mtbf_seconds"] == pytest.approx(
         5 * 3600
     )
+
+    # -----------------------------------------------------
+    # Explainable operational priority
+    # -----------------------------------------------------
+
+    priority = data["priority"]
+
+    assert priority["top_priority_machine_id"] == machine_a_id
+
+    assert len(priority["machines"]) == 2
+
+    priority_a = next(
+        machine
+        for machine in priority["machines"]
+        if machine["machine_id"] == machine_a_id
+    )
+
+    priority_b = next(
+        machine
+        for machine in priority["machines"]
+        if machine["machine_id"] == machine_b_id
+    )
+
+    assert priority_a["priority_rank"] == 1
+    assert priority_a["downtime_rank"] == 1
+    assert priority_a["failure_rank"] == 1
+    assert priority_a["mttr_rank"] == 2
+    assert priority_a["mtbf_rank"] == 1
+
+    assert priority_b["priority_rank"] == 2
+    assert priority_b["downtime_rank"] == 2
+    assert priority_b["failure_rank"] == 2
+    assert priority_b["mttr_rank"] == 1
+    assert priority_b["mtbf_rank"] == 2
 
 
 async def test_operational_intelligence_api_allows_all_authenticated_roles(

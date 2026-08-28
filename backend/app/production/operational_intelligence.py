@@ -56,6 +56,275 @@ class OperationalDowntimeSummary:
     ]
 
 
+@dataclass(frozen=True, slots=True)
+class MachineOperationalPriority:
+    machine_id: int
+    machine_name: str
+    machine_code: str
+
+    priority_rank: int | None
+
+    downtime_rank: int | None
+    failure_rank: int | None
+    mttr_rank: int | None
+    mtbf_rank: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class OperationalPrioritySummary:
+    top_priority_machine_id: int | None
+
+    machines: tuple[
+        MachineOperationalPriority,
+        ...,
+    ]
+
+
+def _calculate_competition_ranks(
+    values: dict[int, float | int],
+    *,
+    higher_is_worse: bool,
+) -> dict[int, int]:
+    ordered_values = sorted(
+        values.items(),
+        key=lambda item: item[1],
+        reverse=higher_is_worse,
+    )
+
+    ranks: dict[int, int] = {}
+
+    previous_value: float | int | None = None
+    current_rank = 0
+
+    for position, (machine_id, value) in enumerate(
+        ordered_values,
+        start=1,
+    ):
+        if (
+            position == 1
+            or value != previous_value
+        ):
+            current_rank = position
+
+        ranks[machine_id] = current_rank
+        previous_value = value
+
+    return ranks
+
+
+def calculate_operational_priority(
+    machines: Sequence[MachineOperationalImpact],
+) -> OperationalPrioritySummary:
+    machine_ids = [
+        machine.machine_id
+        for machine in machines
+    ]
+
+    if len(machine_ids) != len(set(machine_ids)):
+        raise OperationalIntelligenceError(
+            "Machine IDs must be unique"
+        )
+
+    if not machines:
+        return OperationalPrioritySummary(
+            top_priority_machine_id=None,
+            machines=(),
+        )
+
+    for machine in machines:
+        if machine.recorded_downtime_seconds < 0:
+            raise OperationalIntelligenceError(
+                "Recorded downtime cannot be negative"
+            )
+
+        if machine.failure_count < 0:
+            raise OperationalIntelligenceError(
+                "Failure count cannot be negative"
+            )
+
+        if machine.failure_count > 0:
+            if machine.mttr_seconds is None:
+                raise OperationalIntelligenceError(
+                    "Failed machines require MTTR"
+                )
+
+            if machine.mtbf_seconds is None:
+                raise OperationalIntelligenceError(
+                    "Failed machines require MTBF"
+                )
+
+    has_operational_concern = any(
+        (
+            machine.recorded_downtime_seconds > 0
+            or machine.failure_count > 0
+        )
+        for machine in machines
+    )
+
+    if not has_operational_concern:
+        no_concern_priorities = [
+            MachineOperationalPriority(
+                machine_id=machine.machine_id,
+                machine_name=machine.machine_name,
+                machine_code=machine.machine_code,
+                priority_rank=None,
+                downtime_rank=None,
+                failure_rank=None,
+                mttr_rank=None,
+                mtbf_rank=None,
+            )
+            for machine in machines
+        ]
+
+        no_concern_priorities.sort(
+            key=lambda item: (
+                item.machine_code.casefold(),
+                item.machine_id,
+            )
+        )
+
+        return OperationalPrioritySummary(
+            top_priority_machine_id=None,
+            machines=tuple(no_concern_priorities),
+        )
+
+    downtime_ranks = _calculate_competition_ranks(
+        {
+            machine.machine_id: (
+                machine.recorded_downtime_seconds
+            )
+            for machine in machines
+        },
+        higher_is_worse=True,
+    )
+
+    failure_ranks = _calculate_competition_ranks(
+        {
+            machine.machine_id: machine.failure_count
+            for machine in machines
+        },
+        higher_is_worse=True,
+    )
+
+    failed_machines = [
+        machine
+        for machine in machines
+        if machine.failure_count > 0
+    ]
+
+    mttr_ranks = _calculate_competition_ranks(
+        {
+            machine.machine_id: machine.mttr_seconds
+            for machine in failed_machines
+            if machine.mttr_seconds is not None
+        },
+        higher_is_worse=True,
+    )
+
+    mtbf_ranks = _calculate_competition_ranks(
+        {
+            machine.machine_id: machine.mtbf_seconds
+            for machine in failed_machines
+            if machine.mtbf_seconds is not None
+        },
+        higher_is_worse=False,
+    )
+
+    no_failure_reliability_rank = (
+        len(failed_machines) + 1
+    )
+
+    aggregate_rank_values: dict[int, int] = {}
+
+    for machine in machines:
+        if machine.failure_count > 0:
+            effective_mttr_rank = mttr_ranks[
+                machine.machine_id
+            ]
+
+            effective_mtbf_rank = mtbf_ranks[
+                machine.machine_id
+            ]
+        else:
+            effective_mttr_rank = (
+                no_failure_reliability_rank
+            )
+
+            effective_mtbf_rank = (
+                no_failure_reliability_rank
+            )
+
+        aggregate_rank_values[machine.machine_id] = (
+            downtime_ranks[machine.machine_id]
+            + failure_ranks[machine.machine_id]
+            + effective_mttr_rank
+            + effective_mtbf_rank
+        )
+
+    priority_ranks = _calculate_competition_ranks(
+        aggregate_rank_values,
+        higher_is_worse=False,
+    )
+
+    priorities = [
+        MachineOperationalPriority(
+            machine_id=machine.machine_id,
+            machine_name=machine.machine_name,
+            machine_code=machine.machine_code,
+            priority_rank=priority_ranks[
+                machine.machine_id
+            ],
+            downtime_rank=downtime_ranks[
+                machine.machine_id
+            ],
+            failure_rank=failure_ranks[
+                machine.machine_id
+            ],
+            mttr_rank=(
+                mttr_ranks[machine.machine_id]
+                if machine.failure_count > 0
+                else None
+            ),
+            mtbf_rank=(
+                mtbf_ranks[machine.machine_id]
+                if machine.failure_count > 0
+                else None
+            ),
+        )
+        for machine in machines
+    ]
+
+    impact_by_machine_id = {
+        machine.machine_id: machine
+        for machine in machines
+    }
+
+    priorities.sort(
+        key=lambda item: (
+            (
+                item.priority_rank
+                if item.priority_rank is not None
+                else float("inf")
+            ),
+            -impact_by_machine_id[
+                item.machine_id
+            ].recorded_downtime_seconds,
+            -impact_by_machine_id[
+                item.machine_id
+            ].failure_count,
+            item.machine_code.casefold(),
+            item.machine_id,
+        )
+    )
+
+    return OperationalPrioritySummary(
+        top_priority_machine_id=(
+            priorities[0].machine_id
+        ),
+        machines=tuple(priorities),
+    )
+
+
 def calculate_operational_downtime_impact(
     downtime_metrics: DowntimeAnalyticsMetrics,
     machines: Sequence[MachineReliabilitySnapshot],

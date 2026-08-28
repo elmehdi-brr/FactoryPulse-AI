@@ -17,7 +17,9 @@ from app.schemas.production_analytics import (
 from app.schemas.operational_intelligence import (
     OperationalDowntimeSummaryResponse,
     OperationalMachineImpactResponse,
+    OperationalMachinePriorityResponse,
     OperationalOEEResponse,
+    OperationalPrioritySummaryResponse,
     ProductionLineOperationalIntelligenceResponse,
 )
 from app.schemas.machine import MachineResponse
@@ -362,6 +364,7 @@ async def get_production_line_operational_intelligence_endpoint(
 
     oee = result.oee
     impact = result.operational_impact
+    priority = result.priority
 
     return ProductionLineOperationalIntelligenceResponse(
         production_line_id=production_line_id,
@@ -448,6 +451,24 @@ async def get_production_line_operational_intelligence_endpoint(
                     for machine in impact.machines
                 ],
             )
+        ),
+        priority=OperationalPrioritySummaryResponse(
+            top_priority_machine_id=(
+                priority.top_priority_machine_id
+            ),
+            machines=[
+                OperationalMachinePriorityResponse(
+                    machine_id=machine.machine_id,
+                    machine_name=machine.machine_name,
+                    machine_code=machine.machine_code,
+                    priority_rank=machine.priority_rank,
+                    downtime_rank=machine.downtime_rank,
+                    failure_rank=machine.failure_rank,
+                    mttr_rank=machine.mttr_rank,
+                    mtbf_rank=machine.mtbf_rank,
+                )
+                for machine in priority.machines
+            ],
         ),
     )
 
