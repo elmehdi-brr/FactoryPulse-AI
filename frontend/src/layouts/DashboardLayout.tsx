@@ -15,6 +15,11 @@ import {
   useLocation,
   useOutlet,
 } from 'react-router-dom'
+import {
+  useEffect,
+  useState,
+} from 'react'
+import { CommandPalette } from '../components/shell/CommandPalette'
 
 const navigation = [
   {
@@ -47,6 +52,52 @@ const navigation = [
 export function DashboardLayout() {
   const location = useLocation()
   const outlet = useOutlet()
+
+  const [commandPaletteOpen, setCommandPaletteOpen] =
+  useState(false)
+
+const isMac =
+  typeof navigator !== 'undefined'
+  && /Mac|iPhone|iPad/.test(navigator.userAgent)
+
+const shortcutLabel = isMac ? '⌘ K' : 'Ctrl K'
+
+useEffect(() => {
+  function handleKeyboardShortcut(
+    event: KeyboardEvent,
+  ) {
+    const commandPressed =
+      event.ctrlKey || event.metaKey
+
+    if (
+      commandPressed
+      && event.key.toLowerCase() === 'k'
+    ) {
+      event.preventDefault()
+
+      setCommandPaletteOpen((current) => !current)
+    }
+
+    if (
+      event.key === 'Escape'
+      && commandPaletteOpen
+    ) {
+      setCommandPaletteOpen(false)
+    }
+  }
+
+  window.addEventListener(
+    'keydown',
+    handleKeyboardShortcut,
+  )
+
+  return () => {
+    window.removeEventListener(
+      'keydown',
+      handleKeyboardShortcut,
+    )
+  }
+}, [commandPaletteOpen])
 
   return (
     <div className="dashboard-shell">
@@ -155,14 +206,17 @@ export function DashboardLayout() {
 
           <div className="topbar-actions">
             <button
-              className="search-trigger"
-              type="button"
+                className="search-trigger"
+                type="button"
+                onClick={() => {
+                setCommandPaletteOpen(true)
+                }}
             >
               <Search size={17} />
 
               <span>Search anything...</span>
 
-              <kbd>⌘ K</kbd>
+              <kbd>{shortcutLabel}</kbd>
             </button>
 
             <button
@@ -204,6 +258,12 @@ export function DashboardLayout() {
           </motion.main>
         </AnimatePresence>
       </section>
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => {
+        setCommandPaletteOpen(false)
+        }}
+        />
     </div>
   )
 }

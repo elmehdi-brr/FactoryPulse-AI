@@ -1672,6 +1672,363 @@ a {
 
 
 /* =========================================================
+   COMMAND PALETTE
+   ========================================================= */
+
+.command-palette-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+
+  padding: 12vh 20px 20px;
+}
+
+.command-palette-backdrop {
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+  padding: 0;
+
+  border: 0;
+
+  background:
+    rgba(2, 5, 7, 0.72);
+
+  backdrop-filter:
+    blur(8px)
+    saturate(0.8);
+
+  cursor: default;
+}
+
+.command-palette {
+  position: relative;
+  z-index: 2;
+
+  width: min(620px, 100%);
+  max-height: min(680px, 76vh);
+
+  overflow: hidden;
+
+  border: 1px solid
+    rgba(255, 255, 255, 0.11);
+
+  border-radius: 16px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(18, 24, 29, 0.98),
+      rgba(8, 12, 15, 0.98)
+    );
+
+  box-shadow:
+    0 40px 120px
+      rgba(0, 0, 0, 0.58),
+    0 0 0 1px
+      rgba(59, 217, 135, 0.025),
+    inset 0 1px 0
+      rgba(255, 255, 255, 0.04);
+}
+
+.command-palette::before {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+
+  width: 360px;
+  height: 180px;
+
+  content: "";
+
+  transform: translateX(-50%);
+
+  background:
+    radial-gradient(
+      circle,
+      rgba(59, 217, 135, 0.1),
+      transparent 68%
+    );
+
+  filter: blur(35px);
+
+  pointer-events: none;
+}
+
+.command-search {
+  position: relative;
+  z-index: 2;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  height: 66px;
+  padding: 0 18px;
+
+  border-bottom: 1px solid var(--border);
+}
+
+.command-search > svg {
+  flex: 0 0 auto;
+
+  color: var(--accent);
+}
+
+.command-search input {
+  flex: 1;
+
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+
+  border: 0;
+  outline: 0;
+
+  color: #e7ecef;
+  background: transparent;
+
+  font-size: 14px;
+}
+
+.command-search input::placeholder {
+  color: #596670;
+}
+
+.command-search kbd,
+.command-footer kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 26px;
+  height: 23px;
+  padding: 0 6px;
+
+  border: 1px solid
+    rgba(255, 255, 255, 0.08);
+
+  border-radius: 6px;
+
+  color: #68747e;
+  background:
+    rgba(255, 255, 255, 0.025);
+
+  font-family: inherit;
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.command-content {
+  max-height: 470px;
+  padding: 13px;
+
+  overflow-y: auto;
+}
+
+.command-section-label {
+  padding: 4px 8px 9px;
+
+  color: #53606a;
+
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.command-list {
+  display: grid;
+  gap: 4px;
+}
+
+.command-item {
+  display: grid;
+  grid-template-columns:
+    38px
+    minmax(0, 1fr)
+    24px;
+  align-items: center;
+  gap: 11px;
+
+  width: 100%;
+  min-height: 58px;
+  padding: 7px 10px;
+
+  border: 1px solid transparent;
+  border-radius: 10px;
+
+  color: inherit;
+  background: transparent;
+
+  cursor: pointer;
+
+  text-align: left;
+
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.command-item-selected {
+  border-color:
+    rgba(59, 217, 135, 0.13);
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(59, 217, 135, 0.095),
+      rgba(59, 217, 135, 0.025)
+    );
+}
+
+.command-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 38px;
+  height: 38px;
+
+  border: 1px solid
+    rgba(255, 255, 255, 0.065);
+
+  border-radius: 9px;
+
+  color: #78858f;
+  background:
+    rgba(255, 255, 255, 0.025);
+}
+
+.command-item-selected .command-icon {
+  border-color:
+    rgba(59, 217, 135, 0.16);
+
+  color: var(--accent);
+  background:
+    rgba(59, 217, 135, 0.07);
+}
+
+.command-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.command-copy strong {
+  color: #cdd5da;
+
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.command-item-selected
+.command-copy strong {
+  color: #eef4f1;
+}
+
+.command-copy > span {
+  overflow: hidden;
+
+  color: #596670;
+
+  font-size: 9px;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-enter {
+  color: #4d5963;
+
+  font-size: 11px;
+}
+
+.command-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+
+  min-height: 190px;
+
+  color: #53606a;
+
+  text-align: center;
+}
+
+.command-empty svg {
+  margin-bottom: 12px;
+
+  color: #52615d;
+}
+
+.command-empty strong {
+  color: #909ca5;
+
+  font-size: 11px;
+}
+
+.command-empty span {
+  max-width: 300px;
+  margin-top: 5px;
+
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.command-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+
+  min-height: 45px;
+  padding: 0 17px;
+
+  border-top: 1px solid var(--border);
+
+  color: #53606a;
+  background:
+    rgba(255, 255, 255, 0.012);
+
+  font-size: 8px;
+}
+
+.command-footer > div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+@media (max-width: 680px) {
+  .command-palette-layer {
+    padding:
+      10vh 12px
+      90px;
+  }
+
+  .command-palette {
+    border-radius: 14px;
+  }
+
+  .command-footer {
+    display: none;
+  }
+
+  .command-search {
+    height: 60px;
+  }
+}
+
+
+/* =========================================================
    SCROLLBAR
    ========================================================= */
 
