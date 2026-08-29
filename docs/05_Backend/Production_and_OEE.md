@@ -4616,3 +4616,802 @@ AI-assisted cause suggestions
 ```
 
 AI-generated cause suggestions should remain clearly distinguished from confirmed engineering root causes.
+
+
+
+---
+
+# Period-over-Period Operational Trends
+
+## Overview
+
+Period-over-Period Operational Trends extends FactoryPulse Operational Intelligence by comparing a selected reporting period with the immediately preceding period of equal duration.
+
+It answers:
+
+> Is production performance improving, worsening, or remaining stable?
+
+The comparison includes both line-level production metrics and machine-level reliability metrics.
+
+---
+
+## Comparison Period Semantics
+
+The API receives an explicit current reporting period:
+
+```text
+start_at
+end_at
+```
+
+Example:
+
+```text
+Current:
+2026-08-14 → 2026-08-21
+```
+
+The period duration is:
+
+```text
+7 days
+```
+
+FactoryPulse automatically derives the immediately preceding period of identical duration:
+
+```text
+Previous:
+2026-08-07 → 2026-08-14
+
+Current:
+2026-08-14 → 2026-08-21
+```
+
+The two periods are therefore:
+
+```text
+adjacent
++
+equal duration
+```
+
+This prevents arbitrary comparisons between incompatible time windows.
+
+---
+
+## Architecture
+
+Operational Trends does not reimplement OEE, downtime, or reliability calculations.
+
+Instead:
+
+```text
+Current Period
+      ↓
+Operational Intelligence
+      ↓
+Current Snapshot
+
+Previous Equal Period
+      ↓
+Operational Intelligence
+      ↓
+Previous Snapshot
+
+Current Snapshot
++
+Previous Snapshot
+      ↓
+Pure Trend Engine
+      ↓
+Operational Trend Summary
+```
+
+Main implementation files:
+
+```text
+app/production/operational_trends.py
+app/services/operational_trends_service.py
+app/schemas/operational_trends.py
+app/api/production_lines.py
+```
+
+Tests:
+
+```text
+tests/test_operational_trends.py
+tests/test_production_oee_foundation.py
+```
+
+---
+
+## Line-Level Trend Metrics
+
+FactoryPulse currently compares:
+
+```text
+OEE
+Availability
+Performance
+Quality
+
+Recorded downtime
+Total machine failure count
+```
+
+These metrics retain their existing FactoryPulse definitions.
+
+Operational Trends only compares their period values.
+
+---
+
+## Machine-Level Trend Metrics
+
+For each machine, FactoryPulse compares:
+
+```text
+recorded downtime
+failure count
+MTTR
+MTBF
+```
+
+This allows the system to show whether individual machine reliability is improving or worsening between periods.
+
+---
+
+## Trend Direction
+
+Each comparison produces:
+
+```text
+current_value
+previous_value
+delta
+direction
+```
+
+Supported directions are:
+
+```text
+improved
+worsened
+unchanged
+not_comparable
+```
+
+---
+
+## Higher-Is-Better Metrics
+
+For:
+
+```text
+OEE
+Availability
+Performance
+Quality
+MTBF
+```
+
+higher values represent improvement.
+
+Example:
+
+```text
+Previous OEE = 0.72
+Current OEE = 0.78
+
+delta = +0.06
+direction = improved
+```
+
+---
+
+## Lower-Is-Better Metrics
+
+For:
+
+```text
+recorded downtime
+failure count
+MTTR
+```
+
+lower values represent improvement.
+
+Example:
+
+```text
+Previous downtime = 12 hours
+Current downtime = 9 hours
+
+delta = -3 hours
+direction = improved
+```
+
+The raw delta and semantic direction are kept separate.
+
+---
+
+## Unchanged Metrics
+
+When:
+
+```text
+current_value == previous_value
+```
+
+FactoryPulse returns:
+
+```text
+delta = 0
+direction = unchanged
+```
+
+---
+
+## Not Comparable
+
+Some reliability metrics may legitimately be unavailable.
+
+Example:
+
+```text
+Previous:
+failure_count = 2
+MTBF = 8 hours
+
+Current:
+failure_count = 0
+MTBF = null
+```
+
+FactoryPulse must not interpret:
+
+```text
+8 hours → null
+```
+
+as MTBF deterioration.
+
+The current MTBF is unavailable because there were no qualifying failures from which MTBF could be calculated.
+
+Therefore:
+
+```text
+delta = null
+direction = not_comparable
+```
+
+The failure-count comparison still remains valid:
+
+```text
+2 → 0
+direction = improved
+```
+
+The same rule applies to MTTR.
+
+---
+
+## Pure Trend Engine
+
+The pure trend logic is implemented in:
+
+```text
+app/production/operational_trends.py
+```
+
+It does not access:
+
+```text
+PostgreSQL
+FastAPI
+SQLAlchemy
+production services
+```
+
+It only compares current and previous snapshots.
+
+This keeps trend interpretation independent from data retrieval.
+
+---
+
+## Operational Metric Trend
+
+The core result structure is:
+
+```text
+OperationalMetricTrend
+```
+
+containing:
+
+```text
+current_value
+previous_value
+delta
+direction
+```
+
+The trend engine receives whether higher or lower values represent improvement.
+
+---
+
+## Machine Period Snapshot
+
+Each machine snapshot contains:
+
+```text
+machine_id
+machine_name
+machine_code
+
+recorded_downtime_seconds
+failure_count
+
+mttr_seconds
+mtbf_seconds
+```
+
+These values originate from the already established Operational Intelligence and Machine Reliability layers.
+
+---
+
+## Operational Period Snapshot
+
+The line-level period snapshot contains:
+
+```text
+oee
+availability
+performance
+quality
+
+recorded_downtime_seconds
+total_failure_count
+
+machines
+```
+
+The snapshot is deliberately limited to facts needed by the trend engine.
+
+---
+
+## Machine Population
+
+The trend engine compares machines by:
+
+```text
+machine_id
+```
+
+Machine IDs must be unique within each period.
+
+If a machine appears in only one period, metrics that cannot be compared across both periods become:
+
+```text
+not_comparable
+```
+
+rather than being silently converted to zero.
+
+---
+
+## PostgreSQL Orchestration
+
+The orchestration service is implemented in:
+
+```text
+app/services/operational_trends_service.py
+```
+
+It receives:
+
+```text
+production_line_id
+start_at
+end_at
+```
+
+and calculates:
+
+```text
+period_duration = end_at - start_at
+```
+
+Then:
+
+```text
+previous_start_at =
+start_at - period_duration
+
+previous_end_at =
+start_at
+```
+
+It calls the existing Operational Intelligence service twice:
+
+```text
+calculate_production_line_operational_intelligence(
+    current period
+)
+
+calculate_production_line_operational_intelligence(
+    previous period
+)
+```
+
+This guarantees both periods use the same definitions for:
+
+```text
+OEE
+downtime
+failure count
+MTTR
+MTBF
+machine operational impact
+```
+
+---
+
+## Production Data Requirement
+
+Both comparison periods currently require completed production runs.
+
+If either period contains no completed runs, FactoryPulse returns an analytics error rather than treating missing production as zero.
+
+This avoids misleading comparisons such as:
+
+```text
+Previous OEE = 0
+Current OEE = 0.80
+```
+
+when the previous period actually contained no production data.
+
+Future versions may introduce explicit states such as:
+
+```text
+no_production
+insufficient_data
+```
+
+---
+
+## API
+
+Endpoint:
+
+```http
+GET /production-lines/{production_line_id}/operational-trends
+```
+
+Required query parameters:
+
+```text
+start_at
+end_at
+```
+
+Example:
+
+```text
+/production-lines/5/operational-trends
+?start_at=2026-08-14T00:00:00Z
+&end_at=2026-08-21T00:00:00Z
+```
+
+FactoryPulse automatically derives:
+
+```text
+Previous:
+2026-08-07 → 2026-08-14
+
+Current:
+2026-08-14 → 2026-08-21
+```
+
+---
+
+## API Response
+
+The response contains:
+
+```text
+production_line_id
+
+current_period
+previous_period
+
+trends
+```
+
+The full Operational Intelligence reports for both periods are not returned through this endpoint.
+
+They are used internally by the trend service.
+
+This keeps the HTTP response focused and avoids duplicating large Operational Intelligence payloads.
+
+---
+
+## Conceptual Response Structure
+
+```text
+Operational Trends
+│
+├── production_line_id
+│
+├── current_period
+│   ├── start_at
+│   └── end_at
+│
+├── previous_period
+│   ├── start_at
+│   └── end_at
+│
+└── trends
+    │
+    ├── OEE
+    ├── Availability
+    ├── Performance
+    ├── Quality
+    ├── Recorded Downtime
+    ├── Total Failure Count
+    │
+    └── Machines
+        ├── Recorded Downtime
+        ├── Failure Count
+        ├── MTTR
+        └── MTBF
+```
+
+Each metric contains:
+
+```text
+current_value
+previous_value
+delta
+direction
+```
+
+---
+
+## Example
+
+Previous period:
+
+```text
+Recorded downtime = 3 hours
+Failures = 2
+MTTR = 1 hour
+MTBF = 2.5 hours
+```
+
+Current period:
+
+```text
+Recorded downtime = 1 hour
+Failures = 1
+MTTR = 0.5 hours
+MTBF = 7 hours
+```
+
+FactoryPulse reports:
+
+```text
+Recorded downtime
+delta = -2 hours
+direction = improved
+
+Failure count
+delta = -1
+direction = improved
+
+MTTR
+delta = -0.5 hour
+direction = improved
+
+MTBF
+delta = +4.5 hours
+direction = improved
+```
+
+---
+
+## RBAC
+
+Operational Trends is read-only.
+
+Allowed authenticated roles:
+
+```text
+admin
+manager
+technician
+operator
+```
+
+This follows the same read policy as other FactoryPulse analytics endpoints.
+
+---
+
+## Error Handling
+
+The endpoint returns:
+
+```text
+404
+```
+
+when the production line does not exist.
+
+It returns:
+
+```text
+422
+```
+
+when:
+
+```text
+end_at <= start_at
+required dates are missing
+current period lacks completed production runs
+previous period lacks completed production runs
+underlying Operational Intelligence cannot calculate the report
+```
+
+---
+
+## Testing
+
+Operational Trends is tested at three levels.
+
+### Pure Trend Tests
+
+Coverage includes:
+
+```text
+higher-is-better improvement
+lower-is-better improvement
+unchanged metrics
+not-comparable null metrics
+line-level trends
+machine-level trends
+zero-failure MTTR/MTBF semantics
+```
+
+### PostgreSQL Integration
+
+A dedicated two-period scenario verifies:
+
+```text
+automatic previous-period derivation
+
+previous downtime = 3h
+current downtime = 1h
+
+previous failures = 2
+current failures = 1
+
+previous MTTR = 1h
+current MTTR = 0.5h
+
+previous MTBF = 2.5h
+current MTBF = 7h
+```
+
+and confirms every direction is correctly interpreted as improvement.
+
+### API Tests
+
+Coverage includes:
+
+```text
+period derivation
+OEE trend
+Availability trend
+Performance trend
+Quality trend
+recorded downtime trend
+failure-count trend
+MTTR trend
+MTBF trend
+RBAC for all authenticated roles
+missing production line
+invalid date range
+required query parameters
+missing previous-period production data
+```
+
+---
+
+## Regression Status
+
+After Period-over-Period Operational Trends:
+
+```text
+267 tests passed
+```
+
+The complete FactoryPulse backend regression suite remained green.
+
+---
+
+# Operational Intelligence Milestone Summary
+
+The completed Operational Intelligence milestone now answers five progressively deeper production questions.
+
+```text
+1. How is the production line performing?
+   ↓
+   OEE
+
+2. Which machines are contributing the most operational burden?
+   ↓
+   Operational Impact
+
+3. Which machine deserves attention first?
+   ↓
+   Explainable Operational Priority Ranking
+
+4. Which recorded reasons explain its downtime?
+   ↓
+   Downtime Cause Intelligence
+
+5. Is the line and machine reliability improving or worsening?
+   ↓
+   Period-over-Period Operational Trends
+```
+
+The resulting architecture is:
+
+```text
+Production Line
+│
+├── Production Runs
+│      ↓
+│     OEE
+│
+├── Downtime Events
+│      ↓
+│   Downtime Analytics
+│      ↓
+│   Cause Intelligence
+│
+└── Machines
+       ↓
+   Reliability Analytics
+       │
+       ├── Failure Count
+       ├── MTTR
+       ├── Operating Exposure
+       └── MTBF
+             ↓
+     Operational Impact
+             ↓
+     Priority Ranking
+             ↓
+     Period Comparison
+             ↓
+      Operational Trends
+```
+
+The milestone remains intentionally deterministic and explainable.
+
+FactoryPulse does not currently fabricate:
+
+```text
+AI health scores
+verified root causes
+exact machine production-loss attribution
+business criticality scores
+```
+
+without sufficient supporting data.
+
+This preserves the core design principle:
+
+> Industrial analytics should only claim what the available data can actually support.
