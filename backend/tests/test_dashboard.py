@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -67,6 +68,15 @@ async def test_dashboard_overview_available_to_all_roles(
     }
 
     assert data["production_lines"] == []
+
+    assert data["machine_health"] == {
+        "total_machines": 0,
+        "healthy_count": 0,
+        "attention_count": 0,
+        "critical_count": 0,
+    }
+
+    assert data["recent_alerts"] == []
 
 
 async def test_dashboard_overview_requires_authentication(
@@ -189,6 +199,26 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
     ) -> float:
         return 18000.0
 
+    async def fake_calculate_machine_health(
+        db: object,
+    ) -> dashboard_service.DashboardMachineHealthMetrics:
+        return (
+            dashboard_service.DashboardMachineHealthMetrics(
+                total_machines=3,
+                healthy_count=2,
+                attention_count=1,
+                critical_count=0,
+            )
+        )
+
+    async def fake_get_recent_open_alerts(
+        db: object,
+        limit: int = 3,
+    ) -> list[
+        dashboard_service.DashboardRecentAlertMetrics
+    ]:
+        return []
+
     monkeypatch.setattr(
         dashboard_service,
         "get_production_lines",
@@ -219,6 +249,18 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
         fake_calculate_fleet_mtbf,
     )
 
+    monkeypatch.setattr(
+        dashboard_service,
+        "calculate_machine_health",
+        fake_calculate_machine_health,
+    )
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "get_recent_open_alerts",
+        fake_get_recent_open_alerts,
+    )
+
     result = (
         await dashboard_service.calculate_dashboard_overview(
             object(),
@@ -229,7 +271,6 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
     assert result.availability == 0.75
 
     # A simple average would be 0.70.
-    # FactoryPulse must use aggregated run data.
     assert result.overall_oee != (
         0.90 + 0.50
     ) / 2
@@ -243,10 +284,23 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
     assert result.production_lines[1].oee == 0.50
 
     assert result.production_lines[2].oee is None
+
     assert (
         result.production_lines[2].availability
         is None
     )
+
+    assert (
+        result.machine_health.total_machines
+        == 3
+    )
+
+    assert (
+        result.machine_health.attention_count
+        == 1
+    )
+
+    assert result.recent_alerts == []
 
 
 async def test_fleet_mtbf_uses_total_valid_exposure_over_failures(
@@ -307,3 +361,122 @@ async def test_fleet_mtbf_uses_total_valid_exposure_over_failures(
     )
 
     assert result == 3600.0
+
+
+async def test_machine_health_uses_highest_open_alert_severity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    machines = [
+        SimpleNamespace(id=1),
+        SimpleNamespace(id=2),
+        SimpleNamespace(id=3),
+        SimpleNamespace(id=4),
+    ]
+
+    async def fake_get_machines(
+        db: object,
+    ) -> list[SimpleNamespace]:
+        return machines
+
+    class FakeResult:
+        def all(self):
+            return [
+                (2, "medium"),
+                (3, "future-severity"),
+                (4, "medium"),
+                (4, "critical"),
+            ]
+
+    class FakeDB:
+        async def execute(
+            self,
+            statement: object,
+        ) -> FakeResult:
+            return FakeResult()
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "get_machines",
+        fake_get_machines,
+    )
+
+    result = (
+        await dashboard_service.calculate_machine_health(
+            FakeDB(),
+        )
+    )
+
+    assert result.total_machines == 4
+
+    assert result.healthy_count == 1
+    assert result.attention_count == 2
+    assert result.critical_count == 1
+
+
+async def test_recent_alerts_include_machine_context(
+) -> None:
+    created_at = datetime(
+        2026,
+        8,
+        29,
+        10,
+        30,
+        tzinfo=timezone.utc,
+    )
+
+    alert = SimpleNamespace(
+        id=17,
+        severity="critical",
+        title="Motor temperature",
+        message=(
+            "Motor temperature exceeded threshold"
+        ),
+        created_at=created_at,
+    )
+
+    machine = SimpleNamespace(
+        id=8,
+        name="Press M-101",
+        code="M-101",
+    )
+
+    class FakeResult:
+        def all(self):
+            return [
+                (alert, machine),
+            ]
+
+    class FakeDB:
+        async def execute(
+            self,
+            statement: object,
+        ) -> FakeResult:
+            return FakeResult()
+
+    result = (
+        await dashboard_service.get_recent_open_alerts(
+            FakeDB(),
+            limit=3,
+        )
+    )
+
+    assert len(result) == 1
+
+    recent_alert = result[0]
+
+    assert recent_alert.id == 17
+    assert recent_alert.machine_id == 8
+    assert recent_alert.machine_name == "Press M-101"
+    assert recent_alert.machine_code == "M-101"
+
+    assert recent_alert.severity == "critical"
+
+    assert recent_alert.title == (
+        "Motor temperature"
+    )
+
+    assert recent_alert.message == (
+        "Motor temperature exceeded threshold"
+    )
+
+    assert recent_alert.created_at == created_at

@@ -5,7 +5,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.alert import Alert
+from app.models.machine import Machine
 from app.models.production_run import ProductionRun
+from app.models.sensor import Sensor
 from app.production.analytics import (
     AggregatedOEEMetrics,
 )
@@ -39,6 +41,30 @@ class DashboardProductionLineMetrics:
 
 
 @dataclass(frozen=True, slots=True)
+class DashboardMachineHealthMetrics:
+    total_machines: int
+
+    healthy_count: int
+    attention_count: int
+    critical_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardRecentAlertMetrics:
+    id: int
+
+    machine_id: int
+    machine_name: str
+    machine_code: str
+
+    severity: str
+    title: str
+    message: str
+
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class DashboardOverviewMetrics:
     start_at: datetime | None
     end_at: datetime | None
@@ -52,6 +78,12 @@ class DashboardOverviewMetrics:
 
     production_lines: list[
         DashboardProductionLineMetrics
+    ]
+
+    machine_health: DashboardMachineHealthMetrics
+
+    recent_alerts: list[
+        DashboardRecentAlertMetrics
     ]
 
 
@@ -81,6 +113,119 @@ async def get_active_alert_count(
     )
 
     return int(result.scalar_one())
+
+
+async def calculate_machine_health(
+    db: AsyncSession,
+) -> DashboardMachineHealthMetrics:
+    machines = await get_machines(db)
+
+    machine_health: dict[int, str] = {
+        machine.id: "healthy"
+        for machine in machines
+    }
+
+    result = await db.execute(
+        select(
+            Sensor.machine_id,
+            Alert.severity,
+        )
+        .join(
+            Alert,
+            Alert.sensor_id == Sensor.id,
+        )
+        .where(
+            Alert.status == "open"
+        )
+    )
+
+    for machine_id, severity in result.all():
+        current_health = machine_health.get(
+            machine_id
+        )
+
+        if current_health is None:
+            continue
+
+        normalized_severity = (
+            severity.strip().lower()
+        )
+
+        if normalized_severity == "critical":
+            machine_health[machine_id] = (
+                "critical"
+            )
+
+            continue
+
+        if current_health != "critical":
+            machine_health[machine_id] = (
+                "attention"
+            )
+
+    healthy_count = sum(
+        health == "healthy"
+        for health in machine_health.values()
+    )
+
+    attention_count = sum(
+        health == "attention"
+        for health in machine_health.values()
+    )
+
+    critical_count = sum(
+        health == "critical"
+        for health in machine_health.values()
+    )
+
+    return DashboardMachineHealthMetrics(
+        total_machines=len(machines),
+        healthy_count=healthy_count,
+        attention_count=attention_count,
+        critical_count=critical_count,
+    )
+
+
+async def get_recent_open_alerts(
+    db: AsyncSession,
+    limit: int = 3,
+) -> list[DashboardRecentAlertMetrics]:
+    result = await db.execute(
+        select(
+            Alert,
+            Machine,
+        )
+        .join(
+            Sensor,
+            Alert.sensor_id == Sensor.id,
+        )
+        .join(
+            Machine,
+            Sensor.machine_id == Machine.id,
+        )
+        .where(
+            Alert.status == "open"
+        )
+        .order_by(
+            Alert.created_at.desc(),
+            Alert.id.desc(),
+        )
+        .limit(limit)
+    )
+
+    return [
+        DashboardRecentAlertMetrics(
+            id=alert.id,
+            machine_id=machine.id,
+            machine_name=machine.name,
+            machine_code=machine.code,
+            severity=alert.severity,
+            title=alert.title,
+            message=alert.message,
+            created_at=alert.created_at,
+        )
+        for alert, machine in result.all()
+    ]
 
 
 async def calculate_fleet_mtbf(
@@ -238,6 +383,17 @@ async def calculate_dashboard_overview(
         )
     )
 
+    machine_health = (
+        await calculate_machine_health(db)
+    )
+
+    recent_alerts = (
+        await get_recent_open_alerts(
+            db,
+            limit=3,
+        )
+    )
+
     return DashboardOverviewMetrics(
         start_at=start_at,
         end_at=end_at,
@@ -258,4 +414,6 @@ async def calculate_dashboard_overview(
             fleet_mtbf_seconds
         ),
         production_lines=line_metrics,
+        machine_health=machine_health,
+        recent_alerts=recent_alerts,
     )

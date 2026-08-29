@@ -14,9 +14,11 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.dashboard import (
     DashboardKPIResponse,
+    DashboardMachineHealthResponse,
     DashboardOverviewResponse,
     DashboardPeriodResponse,
     DashboardProductionLineSummaryResponse,
+    DashboardRecentAlertResponse,
 )
 from app.services.dashboard_service import (
     DashboardServiceError,
@@ -80,5 +82,32 @@ async def get_dashboard_overview_endpoint(
                 availability=line.availability,
             )
             for line in metrics.production_lines
+        ],
+        machine_health=DashboardMachineHealthResponse(
+            total_machines=(
+                metrics.machine_health.total_machines
+            ),
+            healthy_count=(
+                metrics.machine_health.healthy_count
+            ),
+            attention_count=(
+                metrics.machine_health.attention_count
+            ),
+            critical_count=(
+                metrics.machine_health.critical_count
+            ),
+        ),
+        recent_alerts=[
+            DashboardRecentAlertResponse(
+                id=alert.id,
+                machine_id=alert.machine_id,
+                machine_name=alert.machine_name,
+                machine_code=alert.machine_code,
+                severity=alert.severity,
+                title=alert.title,
+                message=alert.message,
+                created_at=alert.created_at,
+            )
+            for alert in metrics.recent_alerts
         ],
     )

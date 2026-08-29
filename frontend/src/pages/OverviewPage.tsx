@@ -408,8 +408,21 @@ export function OverviewPage() {
         />
 
         <div className="command-center-side">
-          <MachineHealthPanel />
-          <RecentAlertsPanel />
+          <MachineHealthPanel
+            health={
+            overview?.machine_health
+            ?? null
+            }
+            loading={loading}
+          />
+
+          <RecentAlertsPanel
+            alerts={
+              overview?.recent_alerts
+              ?? []
+            }
+            loading={loading}
+          />
         </div>
       </section>
     </div>

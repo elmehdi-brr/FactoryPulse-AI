@@ -18,8 +18,35 @@ export type DashboardProductionLineSummary = {
   availability: number | null
 }
 
+export type DashboardMachineHealth = {
+  total_machines: number
+  healthy_count: number
+  attention_count: number
+  critical_count: number
+}
+
+export type DashboardRecentAlert = {
+  id: number
+
+  machine_id: number
+  machine_name: string
+  machine_code: string
+
+  severity: string
+  title: string
+  message: string
+
+  created_at: string
+}
+
 export type DashboardOverviewResponse = {
   period: DashboardPeriod
+
   kpis: DashboardKPIs
+
   production_lines: DashboardProductionLineSummary[]
+
+  machine_health: DashboardMachineHealth
+
+  recent_alerts: DashboardRecentAlert[]
 }
