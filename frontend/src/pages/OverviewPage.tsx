@@ -7,6 +7,9 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { motion } from 'motion/react'
+import { MachineHealthPanel } from '../components/dashboard/MachineHealthPanel'
+import { ProductionLinesPanel } from '../components/dashboard/ProductionLinesPanel'
+import { RecentAlertsPanel } from '../components/dashboard/RecentAlertsPanel'
 
 const metrics = [
   {
@@ -260,6 +263,14 @@ export function OverviewPage() {
             </span>
           </div>
         </motion.article>
+      </section>
+            <section className="command-center-grid">
+        <ProductionLinesPanel />
+
+        <div className="command-center-side">
+          <MachineHealthPanel />
+          <RecentAlertsPanel />
+        </div>
       </section>
     </div>
   )
