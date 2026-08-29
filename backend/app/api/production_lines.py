@@ -24,6 +24,13 @@ from app.schemas.operational_intelligence import (
     OperationalPrioritySummaryResponse,
     ProductionLineOperationalIntelligenceResponse,
 )
+from app.schemas.operational_trends import (
+    MachineOperationalTrendResponse,
+    OperationalMetricTrendResponse,
+    OperationalTrendPeriodResponse,
+    OperationalTrendSummaryResponse,
+    ProductionLineOperationalTrendsResponse,
+)
 from app.schemas.machine import MachineResponse
 from app.services.area_service import get_area_by_id
 from app.services.production_line_service import (
@@ -48,6 +55,10 @@ from app.services.downtime_analytics_service import (
 from app.services.operational_intelligence_service import (
     OperationalIntelligenceServiceError,
     calculate_production_line_operational_intelligence,
+)
+from app.services.operational_trends_service import (
+    OperationalTrendsServiceError,
+    calculate_production_line_operational_trends,
 )
 
 
@@ -514,6 +525,114 @@ async def get_production_line_operational_intelligence_endpoint(
         ],
     )
 
+
+@router.get(
+    "/{production_line_id}/operational-trends",
+    response_model=ProductionLineOperationalTrendsResponse,
+)
+async def get_production_line_operational_trends_endpoint(
+    production_line_id: int,
+    start_at: datetime,
+    end_at: datetime,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> ProductionLineOperationalTrendsResponse:
+    production_line = await get_production_line_by_id(
+        db,
+        production_line_id,
+    )
+
+    if production_line is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Production line not found",
+        )
+
+    try:
+        result = (
+            await calculate_production_line_operational_trends(
+                db,
+                production_line_id,
+                start_at=start_at,
+                end_at=end_at,
+            )
+        )
+    except OperationalTrendsServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    trends = result.trends
+
+    def metric_response(
+        metric,
+    ) -> OperationalMetricTrendResponse:
+        return OperationalMetricTrendResponse(
+            current_value=metric.current_value,
+            previous_value=metric.previous_value,
+            delta=metric.delta,
+            direction=metric.direction,
+        )
+
+    return ProductionLineOperationalTrendsResponse(
+        production_line_id=production_line_id,
+
+        current_period=OperationalTrendPeriodResponse(
+            start_at=result.current_period.start_at,
+            end_at=result.current_period.end_at,
+        ),
+
+        previous_period=OperationalTrendPeriodResponse(
+            start_at=result.previous_period.start_at,
+            end_at=result.previous_period.end_at,
+        ),
+
+        trends=OperationalTrendSummaryResponse(
+            oee=metric_response(
+                trends.oee
+            ),
+            availability=metric_response(
+                trends.availability
+            ),
+            performance=metric_response(
+                trends.performance
+            ),
+            quality=metric_response(
+                trends.quality
+            ),
+            recorded_downtime=metric_response(
+                trends.recorded_downtime
+            ),
+            total_failure_count=metric_response(
+                trends.total_failure_count
+            ),
+
+            machines=[
+                MachineOperationalTrendResponse(
+                    machine_id=machine.machine_id,
+                    machine_name=machine.machine_name,
+                    machine_code=machine.machine_code,
+
+                    recorded_downtime=metric_response(
+                        machine.recorded_downtime
+                    ),
+                    failure_count=metric_response(
+                        machine.failure_count
+                    ),
+                    mttr=metric_response(
+                        machine.mttr
+                    ),
+                    mtbf=metric_response(
+                        machine.mtbf
+                    ),
+                )
+                for machine in trends.machines
+            ],
+        ),
+    )
 
 
 @router.get(
