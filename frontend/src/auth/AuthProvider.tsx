@@ -14,6 +14,9 @@ import {
   logout as logoutRequest,
 } from '../services/auth'
 import {
+  subscribeToSessionInvalidation,
+} from '../services/authEvents'
+import {
   getAccessToken,
 } from '../services/authStorage'
 import type {
@@ -78,6 +81,13 @@ export function AuthProvider({
     return () => {
       cancelled = true
     }
+  }, [])
+
+  useEffect(() => {
+    return subscribeToSessionInvalidation(() => {
+      setUser(null)
+      setStatus('unauthenticated')
+    })
   }, [])
 
   const login = useCallback(

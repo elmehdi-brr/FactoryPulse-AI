@@ -3,6 +3,10 @@ import {
   getAccessToken,
 } from './authStorage'
 
+import {
+  notifySessionInvalidated,
+} from './authEvents'
+
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL
 
@@ -75,6 +79,7 @@ export async function apiRequest<T>(
       && authenticated
     ) {
       clearAccessToken()
+      notifySessionInvalidated()
     }
 
     let message = `Request failed with status ${response.status}`
