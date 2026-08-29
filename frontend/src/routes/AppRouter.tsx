@@ -34,6 +34,29 @@ export function AppRouter() {
                 }
               />
 
+
+              <Route
+                path="/profile"
+                element={
+                  <PlaceholderPage
+                    eyebrow="Account"
+                    title="Profile"
+                    description="Manage your FactoryPulse account information and identity."
+                  />
+                }
+              />
+
+              <Route
+                path="/settings"
+                element={
+                  <PlaceholderPage
+                  eyebrow="Workspace"
+                  title="Settings"
+                  description="Configure FactoryPulse workspace and application preferences."
+                  />
+                }
+              />
+
               <Route
                 path="/overview"
                 element={<OverviewPage />}
