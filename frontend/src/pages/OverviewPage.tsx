@@ -1,48 +1,140 @@
 import {
-  ArrowDownRight,
-  ArrowUpRight,
   BrainCircuit,
   Clock3,
   Gauge,
   TriangleAlert,
 } from 'lucide-react'
 import { motion } from 'motion/react'
+import {
+  useEffect,
+  useState,
+} from 'react'
+
 import { MachineHealthPanel } from '../components/dashboard/MachineHealthPanel'
 import { ProductionLinesPanel } from '../components/dashboard/ProductionLinesPanel'
 import { RecentAlertsPanel } from '../components/dashboard/RecentAlertsPanel'
+import { ApiError } from '../services/api'
+import {
+  getDashboardOverview,
+} from '../services/dashboard'
+import type {
+  DashboardOverviewResponse,
+} from '../types/dashboard'
 
-const metrics = [
-  {
-    label: 'Overall OEE',
-    value: '78.4%',
-    change: '+6.2%',
-    trend: 'up',
-    detail: 'vs previous period',
-  },
-  {
-    label: 'Availability',
-    value: '84.2%',
-    change: '+3.1%',
-    trend: 'up',
-    detail: 'vs previous period',
-  },
-  {
-    label: 'Active alerts',
-    value: '7',
-    change: '-4',
-    trend: 'down',
-    detail: 'since yesterday',
-  },
-  {
-    label: 'Avg. MTBF',
-    value: '18.6h',
-    change: '+2.4h',
-    trend: 'up',
-    detail: 'vs previous period',
-  },
-]
+function formatPercentage(
+  value: number | null,
+): string {
+  if (value === null) {
+    return '—'
+  }
+
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function formatHours(
+  seconds: number | null,
+): string {
+  if (seconds === null) {
+    return '—'
+  }
+
+  return `${(seconds / 3600).toFixed(1)}h`
+}
 
 export function OverviewPage() {
+  const [
+    overview,
+    setOverview,
+  ] = useState<DashboardOverviewResponse | null>(
+    null,
+  )
+
+  const [
+    error,
+    setError,
+  ] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadOverview() {
+      try {
+        const response =
+          await getDashboardOverview()
+
+        if (!cancelled) {
+          setOverview(response)
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        if (requestError instanceof ApiError) {
+          setError(requestError.message)
+        } else {
+          setError(
+            'Unable to load the operational overview.',
+          )
+        }
+      }
+    }
+
+    void loadOverview()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const loading =
+    overview === null && error === null
+
+  const metrics = [
+    {
+      label: 'Overall OEE',
+      value: loading
+        ? '…'
+        : formatPercentage(
+            overview?.kpis.overall_oee
+              ?? null,
+          ),
+      detail: 'Current operational snapshot',
+    },
+    {
+      label: 'Availability',
+      value: loading
+        ? '…'
+        : formatPercentage(
+            overview?.kpis.availability
+              ?? null,
+          ),
+      detail: 'Across completed production runs',
+    },
+    {
+      label: 'Active alerts',
+      value: loading
+        ? '…'
+        : String(
+            overview?.kpis
+              .active_alert_count
+            ?? 0,
+          ),
+      detail: 'Open alerts requiring attention',
+    },
+    {
+      label: 'Fleet MTBF',
+      value: loading
+        ? '…'
+        : formatHours(
+            overview?.kpis
+              .fleet_mtbf_seconds
+            ?? null,
+          ),
+      detail: 'Valid machine operating exposure',
+    },
+  ]
+
   return (
     <div className="overview-page">
       <section className="page-heading">
@@ -51,19 +143,46 @@ export function OverviewPage() {
             Operational Command Center
           </p>
 
-          <h1>Good morning.</h1>
+          <h1>Factory overview.</h1>
 
           <p>
-            Here&apos;s what&apos;s happening across your
-            operation right now.
+            Current production, reliability,
+            and operational performance.
           </p>
         </div>
 
         <div className="live-indicator">
           <span />
-          Live
+          Connected
         </div>
       </section>
+
+      {error && (
+        <motion.div
+          className="dashboard-data-error"
+          role="alert"
+          initial={{
+            opacity: 0,
+            y: -6,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
+        >
+          <TriangleAlert size={17} />
+
+          <div>
+            <strong>
+              Operational data unavailable
+            </strong>
+
+            <span>
+              {error}
+            </span>
+          </div>
+        </motion.div>
+      )}
 
       <section className="metric-grid">
         {metrics.map((metric, index) => (
@@ -91,19 +210,9 @@ export function OverviewPage() {
             </span>
 
             <div className="metric-value-row">
-              <strong>{metric.value}</strong>
-
-              <span
-                className={`metric-change metric-change-${metric.trend}`}
-              >
-                {metric.trend === 'up' ? (
-                  <ArrowUpRight size={14} />
-                ) : (
-                  <ArrowDownRight size={14} />
-                )}
-
-                {metric.change}
-              </span>
+              <strong>
+                {metric.value}
+              </strong>
             </div>
 
             <span className="metric-detail">
@@ -116,15 +225,24 @@ export function OverviewPage() {
       <section className="overview-grid">
         <motion.article
           className="panel production-panel"
-          initial={{ opacity: 0, y: 22 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22 }}
+          initial={{
+            opacity: 0,
+            y: 22,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
+          transition={{
+            delay: 0.22,
+          }}
         >
           <div className="panel-header">
             <div>
               <span className="panel-eyebrow">
-                Production performance
+                Production performance · Preview
               </span>
+
               <h2>Line efficiency</h2>
             </div>
 
@@ -151,6 +269,7 @@ export function OverviewPage() {
                     offset="0%"
                     stopColor="rgba(53, 208, 127, 0.35)"
                   />
+
                   <stop
                     offset="100%"
                     stopColor="rgba(53, 208, 127, 0)"
@@ -195,14 +314,22 @@ export function OverviewPage() {
 
         <motion.article
           className="panel attention-panel"
-          initial={{ opacity: 0, y: 22 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.28 }}
+          initial={{
+            opacity: 0,
+            y: 22,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
+          transition={{
+            delay: 0.28,
+          }}
         >
           <div className="panel-header">
             <div>
               <span className="panel-eyebrow">
-                Operational intelligence
+                Operational intelligence · Preview
               </span>
 
               <h2>Needs attention</h2>
@@ -242,15 +369,22 @@ export function OverviewPage() {
 
           <div className="reason-breakdown">
             <div className="reason-header">
-              <span>Motor overheating</span>
+              <span>
+                Motor overheating
+              </span>
+
               <strong>63%</strong>
             </div>
 
             <div className="reason-track">
               <motion.div
                 className="reason-fill"
-                initial={{ width: 0 }}
-                animate={{ width: '63%' }}
+                initial={{
+                  width: 0,
+                }}
+                animate={{
+                  width: '63%',
+                }}
                 transition={{
                   duration: 0.9,
                   delay: 0.55,
@@ -264,8 +398,14 @@ export function OverviewPage() {
           </div>
         </motion.article>
       </section>
-            <section className="command-center-grid">
-        <ProductionLinesPanel />
+
+      <section className="command-center-grid">
+        <ProductionLinesPanel
+          lines={
+            overview?.production_lines ?? []
+          }
+          loading={loading}
+        />
 
         <div className="command-center-side">
           <MachineHealthPanel />

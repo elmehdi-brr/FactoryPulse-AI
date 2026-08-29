@@ -4694,3 +4694,88 @@ a {
     transition: none;
   }
 }
+
+
+/* =========================================================
+   LIVE DASHBOARD DATA
+   ========================================================= */
+
+.dashboard-data-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+
+  margin-bottom: 18px;
+  padding: 13px 15px;
+
+  border: 1px solid
+    rgba(255, 107, 107, 0.14);
+
+  border-radius: 11px;
+
+  color: #e88f8f;
+
+  background:
+    rgba(255, 107, 107, 0.045);
+}
+
+.dashboard-data-error > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.dashboard-data-error > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-data-error strong {
+  color: #eda0a0;
+
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.dashboard-data-error span {
+  margin-top: 3px;
+
+  color: #a8787b;
+
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.dashboard-panel-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 105px;
+  padding: 20px;
+
+  color: #78858e;
+
+  font-size: 12px;
+  text-align: center;
+}
+
+.line-availability {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.line-availability span {
+  color: #707c85;
+
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.line-availability strong {
+  color: #c4cdd3;
+
+  font-size: 13px;
+  font-weight: 650;
+}
