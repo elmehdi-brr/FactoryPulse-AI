@@ -17,6 +17,7 @@ from app.api.sensor_readings import router as sensor_readings_router
 from app.api.sensors import router as sensors_router
 from app.api.sites import router as sites_router
 from app.api.users import router as users_router
+from app.api.dashboard import router as dashboard_router
 from app.core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -33,6 +34,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(dashboard_router)
 
 app.include_router(organizations_router)
 app.include_router(sites_router)

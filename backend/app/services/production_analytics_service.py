@@ -1,4 +1,5 @@
 from datetime import datetime
+from collections.abc import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,28 +54,10 @@ async def get_completed_runs_for_line(
     return list(result.scalars().all())
 
 
-async def calculate_production_line_oee(
+async def calculate_aggregated_oee_for_runs(
     db: AsyncSession,
-    production_line_id: int,
-    start_at: datetime | None = None,
-    end_at: datetime | None = None,
+    production_runs: Sequence[ProductionRun],
 ) -> AggregatedOEEMetrics:
-    if (
-        start_at is not None
-        and end_at is not None
-        and end_at <= start_at
-    ):
-        raise ProductionAnalyticsServiceError(
-            "end_at must be later than start_at"
-        )
-
-    production_runs = await get_completed_runs_for_line(
-        db,
-        production_line_id,
-        start_at=start_at,
-        end_at=end_at,
-    )
-
     if not production_runs:
         raise ProductionAnalyticsServiceError(
             "No completed production runs found for the selected period"
@@ -105,16 +88,46 @@ async def calculate_production_line_oee(
                 ideal_cycle_time_seconds=(
                     production_run.ideal_cycle_time_seconds
                 ),
-                total_quantity=production_run.total_quantity,
-                good_quantity=production_run.good_quantity,
+                total_quantity=(
+                    production_run.total_quantity
+                ),
+                good_quantity=(
+                    production_run.good_quantity
+                ),
             )
         )
 
     try:
-        return aggregate_oee(
-            contributions
-        )
+        return aggregate_oee(contributions)
     except ProductionAnalyticsError as exc:
         raise ProductionAnalyticsServiceError(
             str(exc)
         ) from exc
+
+
+async def calculate_production_line_oee(
+    db: AsyncSession,
+    production_line_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> AggregatedOEEMetrics:
+    if (
+        start_at is not None
+        and end_at is not None
+        and end_at <= start_at
+    ):
+        raise ProductionAnalyticsServiceError(
+            "end_at must be later than start_at"
+        )
+
+    production_runs = await get_completed_runs_for_line(
+        db,
+        production_line_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
+
+    return await calculate_aggregated_oee_for_runs(
+        db,
+        production_runs,
+    )
