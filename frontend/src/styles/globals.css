@@ -2027,6 +2027,471 @@ a {
   }
 }
 
+/* =========================================================
+   NOTIFICATION CENTER
+   ========================================================= */
+
+.notification-center-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+
+  pointer-events: none;
+}
+
+.notification-center-backdrop {
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+  padding: 0;
+
+  border: 0;
+
+  background:
+    rgba(2, 5, 7, 0.18);
+
+  backdrop-filter: blur(2px);
+
+  pointer-events: auto;
+}
+
+.notification-center {
+  position: absolute;
+  top: 62px;
+  right: 18px;
+
+  z-index: 2;
+
+  width: min(390px, calc(100vw - 30px));
+  max-height:
+    min(680px, calc(100vh - 82px));
+
+  overflow: hidden;
+
+  border: 1px solid
+    rgba(255, 255, 255, 0.11);
+
+  border-radius: 15px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(17, 23, 28, 0.985),
+      rgba(8, 12, 15, 0.985)
+    );
+
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.52),
+    inset 0 1px 0
+      rgba(255, 255, 255, 0.035);
+
+  pointer-events: auto;
+}
+
+.notification-center::before {
+  position: absolute;
+  top: -80px;
+  right: -50px;
+
+  width: 210px;
+  height: 170px;
+
+  content: "";
+
+  border-radius: 50%;
+
+  background:
+    rgba(59, 217, 135, 0.055);
+
+  filter: blur(40px);
+
+  pointer-events: none;
+}
+
+.notification-header {
+  position: relative;
+  z-index: 2;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  min-height: 70px;
+  padding: 0 16px;
+
+  border-bottom: 1px solid var(--border);
+}
+
+.notification-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.notification-title-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 35px;
+  height: 35px;
+
+  border: 1px solid
+    rgba(59, 217, 135, 0.12);
+
+  border-radius: 10px;
+
+  color: var(--accent);
+  background:
+    rgba(59, 217, 135, 0.055);
+}
+
+.notification-title > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.notification-title strong {
+  color: #dbe2e6;
+
+  font-size: 12px;
+  font-weight: 630;
+}
+
+.notification-title > div > span {
+  color: #596670;
+
+  font-size: 8px;
+}
+
+.notification-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 30px;
+  height: 30px;
+
+  border: 1px solid transparent;
+  border-radius: 8px;
+
+  color: #596670;
+  background: transparent;
+
+  cursor: pointer;
+
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.notification-close:hover {
+  border-color: var(--border);
+
+  color: #b8c1c7;
+  background:
+    rgba(255, 255, 255, 0.03);
+}
+
+.notification-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  min-height: 44px;
+  padding: 0 16px;
+
+  border-bottom: 1px solid
+    rgba(255, 255, 255, 0.045);
+
+  background:
+    rgba(255, 255, 255, 0.012);
+}
+
+.notification-toolbar > span {
+  color: #515e68;
+
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.notification-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 5px 7px;
+
+  border: 0;
+  border-radius: 7px;
+
+  color: #74818b;
+  background: transparent;
+
+  cursor: pointer;
+
+  font-size: 8px;
+
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.notification-toolbar button:hover:not(:disabled) {
+  color: #aeb8be;
+  background:
+    rgba(255, 255, 255, 0.03);
+}
+
+.notification-toolbar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.notification-list {
+  max-height: 460px;
+
+  overflow-y: auto;
+}
+
+.notification-item {
+  position: relative;
+
+  display: grid;
+  grid-template-columns:
+    34px
+    minmax(0, 1fr)
+    18px;
+  align-items: flex-start;
+  gap: 11px;
+
+  width: 100%;
+  min-height: 106px;
+  padding: 15px 14px;
+
+  border: 0;
+  border-bottom: 1px solid
+    rgba(255, 255, 255, 0.045);
+
+  color: inherit;
+
+  background:
+    rgba(255, 255, 255, 0.012);
+
+  cursor: pointer;
+
+  text-align: left;
+
+  transition:
+    background 160ms ease,
+    opacity 160ms ease;
+}
+
+.notification-item:hover {
+  background:
+    rgba(255, 255, 255, 0.028);
+}
+
+.notification-item-read {
+  opacity: 0.58;
+
+  background: transparent;
+}
+
+.notification-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 34px;
+  height: 34px;
+
+  border-radius: 9px;
+}
+
+.notification-critical
+.notification-icon {
+  border: 1px solid
+    rgba(255, 107, 107, 0.13);
+
+  color: #ef7676;
+  background:
+    rgba(255, 107, 107, 0.065);
+}
+
+.notification-high
+.notification-icon {
+  border: 1px solid
+    rgba(255, 184, 77, 0.13);
+
+  color: #dca653;
+  background:
+    rgba(255, 184, 77, 0.06);
+}
+
+.notification-info
+.notification-icon {
+  border: 1px solid
+    rgba(92, 166, 255, 0.12);
+
+  color: #78a9dc;
+  background:
+    rgba(92, 166, 255, 0.055);
+}
+
+.notification-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.notification-item-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.notification-item-heading strong {
+  color: #cbd3d8;
+
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.notification-unread-dot {
+  width: 5px;
+  height: 5px;
+
+  border-radius: 999px;
+
+  background: var(--accent);
+
+  box-shadow:
+    0 0 9px rgba(59, 217, 135, 0.45);
+}
+
+.notification-message {
+  margin-top: 5px;
+
+  color: #68747e;
+
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.notification-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  margin-top: 9px;
+
+  color: #46525c;
+
+  font-size: 7px;
+}
+
+.notification-meta-divider {
+  width: 2px;
+  height: 2px;
+
+  border-radius: 50%;
+
+  background: #44505a;
+}
+
+.notification-open-icon {
+  margin-top: 8px;
+
+  color: #45515b;
+}
+
+.notification-footer {
+  display: flex;
+  justify-content: center;
+
+  min-height: 49px;
+
+  border-top: 1px solid var(--border);
+
+  background:
+    rgba(255, 255, 255, 0.012);
+}
+
+.notification-footer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+
+  width: 100%;
+
+  border: 0;
+
+  color: #74818b;
+  background: transparent;
+
+  cursor: pointer;
+
+  font-size: 9px;
+  font-weight: 580;
+
+  transition:
+    color 160ms ease,
+    background 160ms ease;
+}
+
+.notification-footer button:hover {
+  color: #b5bec4;
+
+  background:
+    rgba(255, 255, 255, 0.025);
+}
+
+.notification-count {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+
+  border: 2px solid #0a0e12;
+  border-radius: 999px;
+
+  color: #fff;
+
+  background: #e75d5d;
+
+  font-size: 7px;
+  font-weight: 760;
+
+  line-height: 1;
+}
+
+@media (max-width: 680px) {
+  .notification-center {
+    top: 68px;
+    right: 10px;
+    left: 10px;
+
+    width: auto;
+    max-height:
+      calc(100vh - 160px);
+  }
+}
+
 
 /* =========================================================
    SCROLLBAR
@@ -2307,4 +2772,788 @@ a {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+
+/* =========================================================
+   READABILITY / TYPOGRAPHY PASS
+   ========================================================= */
+
+/*
+ * FactoryPulse is information-dense, but operational data
+ * must remain comfortable to read at normal desktop distance.
+ *
+ * Avoid micro-text below ~10-11px except for exceptional
+ * decorative metadata.
+ */
+
+:root {
+  --text-secondary: #9ca7b1;
+  --text-muted: #6f7b85;
+}
+
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
+
+.sidebar-brand-name {
+  font-size: 15px;
+}
+
+.sidebar-brand-subtitle {
+  font-size: 11px;
+}
+
+.sidebar-section-label {
+  font-size: 11px;
+}
+
+.sidebar-link {
+  font-size: 14px;
+}
+
+.navigation-badge {
+  min-width: 23px;
+  height: 21px;
+
+  font-size: 10px;
+}
+
+.sidebar-settings {
+  font-size: 13px;
+}
+
+.sidebar-user-details strong {
+  font-size: 13px;
+}
+
+.sidebar-user-details span {
+  font-size: 11px;
+}
+
+/* =========================================================
+   TOP BAR
+   ========================================================= */
+
+.context-status,
+.context-location {
+  font-size: 12px;
+}
+
+.search-trigger span {
+  font-size: 12px;
+}
+
+.search-trigger kbd {
+  font-size: 10px;
+}
+
+/* =========================================================
+   PAGE HEADER
+   ========================================================= */
+
+.page-eyebrow {
+  font-size: 11px;
+}
+
+.page-heading > div > p:last-child,
+.placeholder-page > div > p {
+  color: #9ba6af;
+
+  font-size: 14px;
+}
+
+.live-indicator {
+  font-size: 11px;
+}
+
+/* =========================================================
+   KPI CARDS
+   ========================================================= */
+
+.metric-label {
+  font-size: 12px;
+}
+
+.metric-value-row strong {
+  font-size: 31px;
+}
+
+.metric-change {
+  font-size: 11px;
+}
+
+.metric-detail {
+  color: #6f7b85;
+
+  font-size: 10px;
+}
+
+/* =========================================================
+   PANEL HEADERS
+   ========================================================= */
+
+.panel-eyebrow {
+  color: #74808a;
+
+  font-size: 10px;
+}
+
+.panel-header h2 {
+  font-size: 18px;
+}
+
+/* =========================================================
+   MAIN PRODUCTION CHART
+   ========================================================= */
+
+.chart-axis {
+  color: #65717b;
+
+  font-size: 10px;
+}
+
+/* =========================================================
+   NEEDS ATTENTION
+   ========================================================= */
+
+.attention-rank {
+  font-size: 12px;
+}
+
+.attention-machine strong {
+  font-size: 13px;
+}
+
+.attention-machine span {
+  font-size: 10px;
+}
+
+.attention-reasons > div {
+  color: #909ba4;
+
+  font-size: 11px;
+}
+
+.reason-header {
+  color: #aeb7bd;
+
+  font-size: 11px;
+}
+
+.reason-header strong {
+  font-size: 12px;
+}
+
+.reason-subtitle {
+  color: #65717b;
+
+  font-size: 10px;
+}
+
+/* =========================================================
+   PRODUCTION LINES
+   ========================================================= */
+
+.production-line-row {
+  min-height: 82px;
+}
+
+.line-identity strong {
+  font-size: 13px;
+}
+
+.line-identity span {
+  color: #65717b;
+
+  font-size: 10px;
+}
+
+.status-pill {
+  height: 25px;
+
+  font-size: 10px;
+}
+
+.line-oee span {
+  color: #65717b;
+
+  font-size: 10px;
+}
+
+.line-oee strong {
+  font-size: 14px;
+}
+
+.line-trend {
+  font-size: 11px;
+}
+
+/* =========================================================
+   MACHINE HEALTH
+   ========================================================= */
+
+.health-ring strong {
+  font-size: 24px;
+}
+
+.health-ring span {
+  color: #65717b;
+
+  font-size: 10px;
+}
+
+.health-item > span {
+  color: #8a969f;
+
+  font-size: 11px;
+}
+
+.health-item > strong {
+  font-size: 12px;
+}
+
+/* =========================================================
+   RECENT ALERTS DASHBOARD PANEL
+   ========================================================= */
+
+.recent-alert-row {
+  min-height: 64px;
+}
+
+.alert-content strong {
+  font-size: 11px;
+}
+
+.alert-severity {
+  font-size: 9px;
+}
+
+.alert-content p {
+  color: #7c8892;
+
+  font-size: 10px;
+}
+
+.alert-time {
+  color: #5f6b75;
+
+  font-size: 9px;
+}
+
+/* =========================================================
+   COMMAND PALETTE
+   ========================================================= */
+
+.command-palette {
+  width: min(680px, 100%);
+}
+
+.command-search input {
+  font-size: 15px;
+}
+
+.command-search kbd,
+.command-footer kbd {
+  font-size: 9px;
+}
+
+.command-section-label {
+  font-size: 10px;
+}
+
+.command-copy strong {
+  font-size: 13px;
+}
+
+.command-copy > span {
+  color: #6f7b85;
+
+  font-size: 11px;
+}
+
+.command-enter {
+  font-size: 12px;
+}
+
+.command-empty strong {
+  font-size: 13px;
+}
+
+.command-empty span {
+  font-size: 11px;
+}
+
+.command-footer {
+  font-size: 10px;
+}
+
+/* =========================================================
+   NOTIFICATION CENTER
+   ========================================================= */
+
+.notification-center {
+  width: min(430px, calc(100vw - 30px));
+}
+
+.notification-title strong {
+  font-size: 14px;
+}
+
+.notification-title > div > span {
+  color: #74808a;
+
+  font-size: 10px;
+}
+
+.notification-toolbar > span {
+  font-size: 10px;
+}
+
+.notification-toolbar button {
+  font-size: 10px;
+}
+
+.notification-item {
+  min-height: 116px;
+  padding: 16px;
+}
+
+.notification-item-heading strong {
+  font-size: 12px;
+}
+
+.notification-message {
+  color: #84909a;
+
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.notification-meta {
+  color: #65717b;
+
+  font-size: 9.5px;
+}
+
+.notification-footer button {
+  font-size: 11px;
+}
+
+.notification-count {
+  min-width: 16px;
+  height: 16px;
+
+  font-size: 8px;
+}
+
+/* =========================================================
+   GENERAL CONTRAST IMPROVEMENT
+   ========================================================= */
+
+.metric-detail,
+.reason-subtitle,
+.line-identity span,
+.health-ring span,
+.alert-time,
+.notification-meta {
+  opacity: 1;
+}
+
+/* =========================================================
+   LARGE DESKTOP
+   ========================================================= */
+
+@media (min-width: 1500px) {
+  .page-content {
+    padding-top: 42px;
+  }
+
+  .sidebar-link {
+    font-size: 14px;
+  }
+
+  .metric-label {
+    font-size: 12px;
+  }
+
+  .metric-detail {
+    font-size: 11px;
+  }
+
+  .panel-eyebrow {
+    font-size: 11px;
+  }
+
+  .line-identity strong {
+    font-size: 13px;
+  }
+
+  .line-identity span {
+    font-size: 10px;
+  }
+}
+
+/* =========================================================
+   MOBILE READABILITY
+   ========================================================= */
+
+@media (max-width: 680px) {
+  .metric-label {
+    font-size: 11px;
+  }
+
+  .metric-detail {
+    font-size: 10px;
+  }
+
+  .panel-eyebrow {
+    font-size: 10px;
+  }
+
+  .panel-header h2 {
+    font-size: 17px;
+  }
+
+  .notification-center {
+    width: auto;
+  }
+
+  .notification-item-heading strong {
+    font-size: 12px;
+  }
+
+  .notification-message {
+    font-size: 10.5px;
+  }
+}
+
+
+
+
+/* =========================================================
+   OVERVIEW READABILITY PASS — V2
+   ========================================================= */
+
+/*
+ * Meaningful operational information should be readable
+ * immediately at normal desktop viewing distance.
+ */
+
+/* ---------------------------------------------------------
+   SECTION LABELS / EYEBROWS
+   --------------------------------------------------------- */
+
+.panel-eyebrow {
+  color: #85919b;
+  font-size: 12px;
+  font-weight: 720;
+  letter-spacing: 0.09em;
+}
+
+.page-eyebrow {
+  font-size: 12px;
+}
+
+.sidebar-section-label {
+  color: #6f7b85;
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------
+   CHART
+   --------------------------------------------------------- */
+
+.chart-axis {
+  color: #77838d;
+  font-size: 11px;
+  font-weight: 520;
+}
+
+/* ---------------------------------------------------------
+   NEEDS ATTENTION
+   --------------------------------------------------------- */
+
+.attention-machine strong {
+  font-size: 14px;
+}
+
+.attention-machine span {
+  color: #78848e;
+  font-size: 11px;
+}
+
+.attention-reasons > div {
+  color: #9ba5ad;
+  font-size: 12px;
+}
+
+.reason-header {
+  font-size: 12px;
+}
+
+.reason-header strong {
+  font-size: 13px;
+}
+
+.reason-subtitle {
+  color: #717d87;
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------
+   PRODUCTION LINES
+   --------------------------------------------------------- */
+
+.production-line-row {
+  min-height: 88px;
+  padding-right: 18px;
+  padding-left: 18px;
+}
+
+.line-identity {
+  gap: 13px;
+}
+
+.line-identity strong {
+  color: #d7dde1;
+  font-size: 14px;
+  font-weight: 630;
+}
+
+.line-identity span {
+  color: #78848e;
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.status-pill {
+  min-width: 72px;
+  height: 28px;
+  padding: 0 10px;
+
+  font-size: 11px;
+}
+
+.line-oee {
+  gap: 4px;
+}
+
+.line-oee span {
+  color: #78848e;
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.line-oee strong {
+  color: #e1e6e9;
+  font-size: 15px;
+}
+
+.line-trend {
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------
+   MACHINE HEALTH
+   --------------------------------------------------------- */
+
+.health-ring strong {
+  font-size: 26px;
+}
+
+.health-ring span {
+  color: #77838d;
+  font-size: 11px;
+}
+
+.health-item {
+  min-height: 35px;
+}
+
+.health-item > span {
+  color: #9aa5ad;
+  font-size: 12px;
+}
+
+.health-item > strong {
+  color: #e0e5e8;
+  font-size: 13px;
+}
+
+/* ---------------------------------------------------------
+   RECENT ALERTS
+   --------------------------------------------------------- */
+
+.recent-alert-row {
+  min-height: 72px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.alert-content strong {
+  color: #d8dee2;
+  font-size: 12px;
+}
+
+.alert-severity {
+  font-size: 10px;
+}
+
+.alert-content p {
+  margin-top: 5px;
+
+  color: #909ba4;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.alert-time {
+  display: inline-block;
+
+  margin-top: 4px;
+
+  color: #68747e;
+  font-size: 10px;
+}
+
+/* ---------------------------------------------------------
+   KPI DETAILS
+   --------------------------------------------------------- */
+
+.metric-label {
+  font-size: 13px;
+}
+
+.metric-detail {
+  color: #78848e;
+  font-size: 11px;
+}
+
+.metric-change {
+  font-size: 11px;
+}
+
+/* ---------------------------------------------------------
+   PANEL TITLES
+   --------------------------------------------------------- */
+
+.panel-header h2 {
+  font-size: 19px;
+}
+
+/* ---------------------------------------------------------
+   LARGE DESKTOP — KEEP INFORMATION COMFORTABLE
+   --------------------------------------------------------- */
+
+@media (min-width: 1500px) {
+  .panel-eyebrow {
+    font-size: 12px;
+  }
+
+  .line-identity strong {
+    font-size: 14px;
+  }
+
+  .line-identity span {
+    font-size: 11px;
+  }
+
+  .health-item > span {
+    font-size: 12px;
+  }
+
+  .alert-content p {
+    font-size: 11px;
+  }
+
+  .chart-axis {
+    font-size: 11px;
+  }
+}
+
+
+
+/* =========================================================
+   OPERATIONAL ATTENTION — READABILITY
+   ========================================================= */
+
+.attention-panel .panel-eyebrow {
+  color: #89959e;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.attention-panel .panel-header h2 {
+  font-size: 20px;
+}
+
+.attention-machine {
+  min-height: 72px;
+  padding: 17px;
+}
+
+.attention-rank {
+  width: 40px;
+  height: 40px;
+
+  font-size: 13px;
+}
+
+.attention-machine strong {
+  color: #e1e6e9;
+
+  font-size: 15px;
+  font-weight: 630;
+}
+
+.attention-machine span {
+  margin-top: 2px;
+
+  color: #8a959e;
+  font-size: 12px;
+}
+
+.attention-reasons {
+  gap: 11px;
+  margin-top: 21px;
+}
+
+.attention-reasons > div {
+  gap: 10px;
+
+  color: #a2abb2;
+  font-size: 13px;
+}
+
+.attention-reasons svg {
+  width: 17px;
+  height: 17px;
+}
+
+.reason-breakdown {
+  margin-top: 34px;
+}
+
+.reason-header {
+  color: #abb4ba;
+  font-size: 13px;
+}
+
+.reason-header strong {
+  color: #f0f3f5;
+  font-size: 14px;
+}
+
+.reason-track {
+  height: 6px;
+  margin-top: 11px;
+}
+
+.reason-subtitle {
+  margin-top: 9px;
+
+  color: #77838d;
+  font-size: 11.5px;
+  line-height: 1.45;
 }

@@ -20,6 +20,7 @@ import {
   useState,
 } from 'react'
 import { CommandPalette } from '../components/shell/CommandPalette'
+import { NotificationCenter } from '../components/shell/NotificationCenter'
 
 const navigation = [
   {
@@ -61,6 +62,15 @@ const isMac =
   && /Mac|iPhone|iPad/.test(navigator.userAgent)
 
 const shortcutLabel = isMac ? '⌘ K' : 'Ctrl K'
+const [
+  notificationCenterOpen,
+  setNotificationCenterOpen,
+] = useState(false)
+
+const [
+  unreadNotificationCount,
+  setUnreadNotificationCount,
+] = useState(3)
 
 useEffect(() => {
   function handleKeyboardShortcut(
@@ -78,12 +88,15 @@ useEffect(() => {
       setCommandPaletteOpen((current) => !current)
     }
 
-    if (
-      event.key === 'Escape'
-      && commandPaletteOpen
-    ) {
-      setCommandPaletteOpen(false)
-    }
+    if (event.key === 'Escape') {
+        if (commandPaletteOpen) {
+            setCommandPaletteOpen(false)
+        }
+
+        if (notificationCenterOpen) {
+            setNotificationCenterOpen(false)
+        }
+     }
   }
 
   window.addEventListener(
@@ -97,7 +110,7 @@ useEffect(() => {
       handleKeyboardShortcut,
     )
   }
-}, [commandPaletteOpen])
+}, [commandPaletteOpen,   notificationCenterOpen,])
 
   return (
     <div className="dashboard-shell">
@@ -209,7 +222,8 @@ useEffect(() => {
                 className="search-trigger"
                 type="button"
                 onClick={() => {
-                setCommandPaletteOpen(true)
+                    setNotificationCenterOpen(false)
+                    setCommandPaletteOpen(true)
                 }}
             >
               <Search size={17} />
@@ -220,12 +234,25 @@ useEffect(() => {
             </button>
 
             <button
-              className="icon-button"
-              type="button"
-              aria-label="Notifications"
+                className="icon-button"
+                type="button"
+                aria-label="Notifications"
+                aria-expanded={notificationCenterOpen}
+                onClick={() => {
+                    setCommandPaletteOpen(false)
+
+                    setNotificationCenterOpen(
+                        (current) => !current,
+                    )
+                }}
             >
-              <Bell size={18} />
-              <span className="notification-dot" />
+                <Bell size={18} />
+
+                {unreadNotificationCount > 0 && (
+                    <span className="notification-count">
+                        {unreadNotificationCount}
+                    </span>
+                )}
             </button>
           </div>
         </header>
@@ -258,7 +285,17 @@ useEffect(() => {
           </motion.main>
         </AnimatePresence>
       </section>
-      <CommandPalette
+        <NotificationCenter
+            open={notificationCenterOpen}
+            onClose={() => {
+                setNotificationCenterOpen(false)
+            }}
+            onUnreadCountChange={
+                setUnreadNotificationCount
+            }
+        />
+
+        <CommandPalette
         open={commandPaletteOpen}
         onClose={() => {
         setCommandPaletteOpen(false)
