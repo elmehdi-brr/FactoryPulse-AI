@@ -26,6 +26,7 @@ class DowntimeAnalyticsServiceError(ValueError):
 class ProductionLineDowntimeAnalyticsResult:
     run_count: int
     metrics: DowntimeAnalyticsMetrics
+    events: tuple[DowntimeAnalyticsEvent, ...]
 
 
 async def calculate_production_line_downtime_analytics(
@@ -105,4 +106,5 @@ async def calculate_production_line_downtime_analytics(
     return ProductionLineDowntimeAnalyticsResult(
         run_count=len(production_runs),
         metrics=metrics,
+        events=tuple(analytics_events),
     )
