@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.dashboard import (
     DashboardKPIResponse,
     DashboardMachineHealthResponse,
+    DashboardNeedsAttentionResponse,
     DashboardOverviewResponse,
     DashboardPeriodResponse,
     DashboardProductionLineSummaryResponse,
@@ -57,6 +58,8 @@ async def get_dashboard_overview_endpoint(
             ),
             detail=str(exc),
         ) from exc
+
+    needs_attention = metrics.needs_attention
 
     return DashboardOverviewResponse(
         period=DashboardPeriodResponse(
@@ -110,4 +113,48 @@ async def get_dashboard_overview_endpoint(
             )
             for alert in metrics.recent_alerts
         ],
+        needs_attention=(
+            DashboardNeedsAttentionResponse(
+                machine_id=(
+                    needs_attention.machine_id
+                ),
+                machine_name=(
+                    needs_attention.machine_name
+                ),
+                machine_code=(
+                    needs_attention.machine_code
+                ),
+                production_line_id=(
+                    needs_attention.production_line_id
+                ),
+                production_line_name=(
+                    needs_attention.production_line_name
+                ),
+                priority_rank=(
+                    needs_attention.priority_rank
+                ),
+                recorded_downtime_seconds=(
+                    needs_attention
+                    .recorded_downtime_seconds
+                ),
+                failure_count=(
+                    needs_attention.failure_count
+                ),
+                mttr_seconds=(
+                    needs_attention.mttr_seconds
+                ),
+                mtbf_seconds=(
+                    needs_attention.mtbf_seconds
+                ),
+                dominant_reason=(
+                    needs_attention.dominant_reason
+                ),
+                dominant_reason_percentage=(
+                    needs_attention
+                    .dominant_reason_percentage
+                ),
+            )
+            if needs_attention is not None
+            else None
+        ),
     )

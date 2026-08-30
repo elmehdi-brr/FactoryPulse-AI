@@ -44,11 +44,32 @@ class DashboardRecentAlertResponse(BaseModel):
 
     created_at: datetime
 
+class DashboardNeedsAttentionResponse(BaseModel):
+    machine_id: int
+    machine_name: str
+    machine_code: str
+
+    production_line_id: int
+    production_line_name: str
+
+    priority_rank: int
+
+    recorded_downtime_seconds: float
+    failure_count: int
+
+    mttr_seconds: float | None
+    mtbf_seconds: float | None
+
+    dominant_reason: str | None
+    dominant_reason_percentage: float | None
+
 
 class DashboardOverviewResponse(BaseModel):
     period: DashboardPeriodResponse
 
     kpis: DashboardKPIResponse
+
+    needs_attention: DashboardNeedsAttentionResponse | None
 
     production_lines: list[
         DashboardProductionLineSummaryResponse

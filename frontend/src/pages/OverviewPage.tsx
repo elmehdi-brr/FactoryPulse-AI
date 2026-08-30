@@ -1,6 +1,4 @@
 import {
-  BrainCircuit,
-  Clock3,
   Gauge,
   TriangleAlert,
 } from 'lucide-react'
@@ -10,6 +8,7 @@ import {
   useState,
 } from 'react'
 
+import { NeedsAttentionPanel } from '../components/dashboard/NeedsAttentionPanel'
 import { MachineHealthPanel } from '../components/dashboard/MachineHealthPanel'
 import { ProductionLinesPanel } from '../components/dashboard/ProductionLinesPanel'
 import { RecentAlertsPanel } from '../components/dashboard/RecentAlertsPanel'
@@ -186,40 +185,40 @@ export function OverviewPage() {
 
       <section className="metric-grid">
         {metrics.map((metric, index) => (
-          <motion.article
-            key={metric.label}
-            className="metric-card"
-            initial={{
-              opacity: 0,
-              y: 18,
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-            }}
-            transition={{
-              delay: 0.05 * index,
-              duration: 0.4,
-            }}
-            whileHover={{
-              y: -3,
-            }}
-          >
-            <span className="metric-label">
-              {metric.label}
-            </span>
+        <motion.article
+          key={metric.label}
+          className="metric-card"
+          initial={{
+            opacity: 0,
+            y: 18,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
+          transition={{
+            delay: 0.05 * index,
+            duration: 0.4,
+          }}
+          whileHover={{
+            y: -3,
+          }}
+        >
+        <span className="metric-label">
+          {metric.label}
+        </span>
 
-            <div className="metric-value-row">
-              <strong>
-                {metric.value}
-              </strong>
-            </div>
+        <div className="metric-value-row">
+          <strong>
+            {metric.value}
+          </strong>
+        </div>
 
-            <span className="metric-detail">
-              {metric.detail}
-            </span>
-          </motion.article>
-        ))}
+        <span className="metric-detail">
+          {metric.detail}
+        </span>
+        </motion.article>
+      ))}
       </section>
 
       <section className="overview-grid">
@@ -312,91 +311,13 @@ export function OverviewPage() {
           </div>
         </motion.article>
 
-        <motion.article
-          className="panel attention-panel"
-          initial={{
-            opacity: 0,
-            y: 22,
-          }}
-          animate={{
-            opacity: 1,
-            y: 0,
-          }}
-          transition={{
-            delay: 0.28,
-          }}
-        >
-          <div className="panel-header">
-            <div>
-              <span className="panel-eyebrow">
-                Operational intelligence · Preview
-              </span>
-
-              <h2>Needs attention</h2>
-            </div>
-
-            <BrainCircuit size={20} />
-          </div>
-
-          <div className="attention-machine">
-            <div className="attention-rank">
-              #1
-            </div>
-
-            <div>
-              <strong>Press M-101</strong>
-              <span>Assembly Line A</span>
-            </div>
-          </div>
-
-          <div className="attention-reasons">
-            <div>
-              <TriangleAlert size={16} />
-
-              <span>
-                Highest downtime burden
-              </span>
-            </div>
-
-            <div>
-              <Clock3 size={16} />
-
-              <span>
-                MTTR 47 minutes
-              </span>
-            </div>
-          </div>
-
-          <div className="reason-breakdown">
-            <div className="reason-header">
-              <span>
-                Motor overheating
-              </span>
-
-              <strong>63%</strong>
-            </div>
-
-            <div className="reason-track">
-              <motion.div
-                className="reason-fill"
-                initial={{
-                  width: 0,
-                }}
-                animate={{
-                  width: '63%',
-                }}
-                transition={{
-                  duration: 0.9,
-                  delay: 0.55,
-                }}
-              />
-            </div>
-
-            <span className="reason-subtitle">
-              dominant recorded downtime reason
-            </span>
-          </div>
-        </motion.article>
+        <NeedsAttentionPanel
+          item={
+            overview?.needs_attention
+            ?? null
+          }
+          loading={loading}
+        />
       </section>
 
       <section className="command-center-grid">

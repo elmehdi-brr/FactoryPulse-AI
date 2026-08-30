@@ -39,6 +39,27 @@ export type DashboardRecentAlert = {
   created_at: string
 }
 
+export type DashboardNeedsAttention = {
+  machine_id: number
+  machine_name: string
+  machine_code: string
+
+  production_line_id: number
+  production_line_name: string
+
+  priority_rank: number
+
+  recorded_downtime_seconds: number
+  failure_count: number
+
+  mttr_seconds: number | null
+  mtbf_seconds: number | null
+
+  dominant_reason: string | null
+  dominant_reason_percentage: number | null
+}
+
+
 export type DashboardOverviewResponse = {
   period: DashboardPeriod
 
@@ -49,4 +70,5 @@ export type DashboardOverviewResponse = {
   machine_health: DashboardMachineHealth
 
   recent_alerts: DashboardRecentAlert[]
+  needs_attention: DashboardNeedsAttention | null
 }

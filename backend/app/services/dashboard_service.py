@@ -11,6 +11,11 @@ from app.models.sensor import Sensor
 from app.production.analytics import (
     AggregatedOEEMetrics,
 )
+from app.production.operational_intelligence import (
+    MachineOperationalImpact,
+    OperationalIntelligenceError,
+    calculate_operational_priority,
+)
 from app.services.machine_reliability_service import (
     MachineReliabilityServiceError,
     calculate_machine_reliability,
@@ -23,6 +28,10 @@ from app.services.production_analytics_service import (
 )
 from app.services.production_line_service import (
     get_production_lines,
+)
+from app.services.operational_intelligence_service import (
+    OperationalIntelligenceServiceError,
+    calculate_production_line_operational_intelligence,
 )
 
 
@@ -63,6 +72,25 @@ class DashboardRecentAlertMetrics:
 
     created_at: datetime
 
+@dataclass(frozen=True, slots=True)
+class DashboardNeedsAttentionMetrics:
+    machine_id: int
+    machine_name: str
+    machine_code: str
+
+    production_line_id: int
+    production_line_name: str
+
+    priority_rank: int
+
+    recorded_downtime_seconds: float
+    failure_count: int
+
+    mttr_seconds: float | None
+    mtbf_seconds: float | None
+
+    dominant_reason: str | None
+    dominant_reason_percentage: float | None
 
 @dataclass(frozen=True, slots=True)
 class DashboardOverviewMetrics:
@@ -71,6 +99,8 @@ class DashboardOverviewMetrics:
 
     overall_oee: float | None
     availability: float | None
+
+    needs_attention: DashboardNeedsAttentionMetrics | None
 
     active_alert_count: int
 
@@ -283,6 +313,179 @@ async def calculate_fleet_mtbf(
     )
 
 
+async def calculate_factory_needs_attention(
+    db: AsyncSession,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> DashboardNeedsAttentionMetrics | None:
+    production_lines = await get_production_lines(
+        db
+    )
+
+    all_machine_impacts: list[
+        MachineOperationalImpact
+    ] = []
+
+    line_by_machine_id: dict[
+        int,
+        tuple[int, str],
+    ] = {}
+
+    reason_by_machine_id: dict[
+        int,
+        tuple[str | None, float | None],
+    ] = {}
+
+    for production_line in production_lines:
+        completed_runs = (
+            await get_completed_runs_for_line(
+                db,
+                production_line.id,
+                start_at=start_at,
+                end_at=end_at,
+            )
+        )
+
+        if not completed_runs:
+            continue
+
+        try:
+            intelligence = (
+                await calculate_production_line_operational_intelligence(
+                    db,
+                    production_line.id,
+                    start_at=start_at,
+                    end_at=end_at,
+                )
+            )
+        except OperationalIntelligenceServiceError as exc:
+            raise DashboardServiceError(
+                str(exc)
+            ) from exc
+
+        for machine in (
+            intelligence.operational_impact.machines
+        ):
+            all_machine_impacts.append(
+                machine
+            )
+
+            line_by_machine_id[
+                machine.machine_id
+            ] = (
+                production_line.id,
+                production_line.name,
+            )
+
+        for reason_summary in (
+            intelligence.downtime_reasons
+        ):
+            dominant_reason = (
+                reason_summary.dominant_duration_reason
+            )
+
+            dominant_percentage: (
+                float | None
+            ) = None
+
+            if dominant_reason is not None:
+                for reason in reason_summary.by_reason:
+                    if (
+                        reason.reason
+                        == dominant_reason
+                    ):
+                        dominant_percentage = (
+                            reason.percentage
+                        )
+                        break
+
+            reason_by_machine_id[
+                reason_summary.machine_id
+            ] = (
+                dominant_reason,
+                dominant_percentage,
+            )
+
+    if not all_machine_impacts:
+        return None
+
+    try:
+        priority = calculate_operational_priority(
+            all_machine_impacts
+        )
+    except OperationalIntelligenceError as exc:
+        raise DashboardServiceError(
+            str(exc)
+        ) from exc
+
+    top_machine_id = (
+        priority.top_priority_machine_id
+    )
+
+    if top_machine_id is None:
+        return None
+
+    impact_by_machine_id = {
+        machine.machine_id: machine
+        for machine in all_machine_impacts
+    }
+
+    priority_by_machine_id = {
+        machine.machine_id: machine
+        for machine in priority.machines
+    }
+
+    top_impact = impact_by_machine_id[
+        top_machine_id
+    ]
+
+    top_priority = priority_by_machine_id[
+        top_machine_id
+    ]
+
+    production_line_id, production_line_name = (
+        line_by_machine_id[
+            top_machine_id
+        ]
+    )
+
+    dominant_reason, dominant_percentage = (
+        reason_by_machine_id.get(
+            top_machine_id,
+            (None, None),
+        )
+    )
+
+    if top_priority.priority_rank is None:
+        return None
+
+    return DashboardNeedsAttentionMetrics(
+        machine_id=top_impact.machine_id,
+        machine_name=top_impact.machine_name,
+        machine_code=top_impact.machine_code,
+        production_line_id=production_line_id,
+        production_line_name=production_line_name,
+        priority_rank=(
+            top_priority.priority_rank
+        ),
+        recorded_downtime_seconds=(
+            top_impact.recorded_downtime_seconds
+        ),
+        failure_count=(
+            top_impact.failure_count
+        ),
+        mttr_seconds=(
+            top_impact.mttr_seconds
+        ),
+        mtbf_seconds=(
+            top_impact.mtbf_seconds
+        ),
+        dominant_reason=dominant_reason,
+        dominant_reason_percentage=(
+            dominant_percentage
+        ),
+    )
+
 async def calculate_dashboard_overview(
     db: AsyncSession,
     start_at: datetime | None = None,
@@ -393,6 +596,13 @@ async def calculate_dashboard_overview(
             limit=3,
         )
     )
+    needs_attention = (
+        await calculate_factory_needs_attention(
+            db,
+            start_at=start_at,
+            end_at=end_at,
+        )
+    )
 
     return DashboardOverviewMetrics(
         start_at=start_at,
@@ -416,4 +626,5 @@ async def calculate_dashboard_overview(
         production_lines=line_metrics,
         machine_health=machine_health,
         recent_alerts=recent_alerts,
+        needs_attention=needs_attention,
     )

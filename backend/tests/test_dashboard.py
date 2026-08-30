@@ -77,6 +77,7 @@ async def test_dashboard_overview_available_to_all_roles(
     }
 
     assert data["recent_alerts"] == []
+    assert data["needs_attention"] is None
 
 
 async def test_dashboard_overview_requires_authentication(
@@ -154,6 +155,18 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
         return runs_by_line[
             production_line_id
         ]
+    async def fake_calculate_factory_needs_attention(
+        db: object,
+        start_at=None,
+        end_at=None,
+    ):
+        return None
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "calculate_factory_needs_attention",
+        fake_calculate_factory_needs_attention,
+    )
 
     async def fake_calculate_aggregated_oee_for_runs(
         db: object,
@@ -301,6 +314,8 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
     )
 
     assert result.recent_alerts == []
+    assert result.needs_attention is None
+
 
 
 async def test_fleet_mtbf_uses_total_valid_exposure_over_failures(
@@ -480,3 +495,190 @@ async def test_recent_alerts_include_machine_context(
     )
 
     assert recent_alert.created_at == created_at
+
+
+async def test_factory_needs_attention_recomputes_priority_across_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    production_lines = [
+        SimpleNamespace(
+            id=1,
+            name="Assembly Line A",
+            code="LINE-A",
+        ),
+        SimpleNamespace(
+            id=2,
+            name="Packaging Line B",
+            code="LINE-B",
+        ),
+    ]
+
+    runs_by_line = {
+        1: [
+            SimpleNamespace(id=101),
+        ],
+        2: [
+            SimpleNamespace(id=201),
+        ],
+    }
+
+    line_a_machine = SimpleNamespace(
+        machine_id=11,
+        machine_name="Press M-101",
+        machine_code="M-101",
+        recorded_downtime_event_count=1,
+        recorded_downtime_seconds=1000.0,
+        recorded_downtime_share=1.0,
+        failure_count=0,
+        mttr_seconds=None,
+        operating_exposure_seconds=7200.0,
+        mtbf_seconds=None,
+    )
+
+    line_b_machine = SimpleNamespace(
+        machine_id=22,
+        machine_name="Conveyor M-204",
+        machine_code="M-204",
+        recorded_downtime_event_count=3,
+        recorded_downtime_seconds=500.0,
+        recorded_downtime_share=1.0,
+        failure_count=3,
+        mttr_seconds=1200.0,
+        operating_exposure_seconds=9000.0,
+        mtbf_seconds=3000.0,
+    )
+
+    async def fake_get_production_lines(
+        db: object,
+    ) -> list[SimpleNamespace]:
+        return production_lines
+
+    async def fake_get_completed_runs_for_line(
+        db: object,
+        production_line_id: int,
+        start_at=None,
+        end_at=None,
+    ) -> list[SimpleNamespace]:
+        return runs_by_line[
+            production_line_id
+        ]
+
+    async def fake_operational_intelligence(
+        db: object,
+        production_line_id: int,
+        start_at=None,
+        end_at=None,
+    ) -> SimpleNamespace:
+        if production_line_id == 1:
+            return SimpleNamespace(
+                operational_impact=SimpleNamespace(
+                    machines=(
+                        line_a_machine,
+                    ),
+                ),
+                downtime_reasons=(
+                    SimpleNamespace(
+                        machine_id=11,
+                        dominant_duration_reason=(
+                            "Motor Overheating"
+                        ),
+                        by_reason=(
+                            SimpleNamespace(
+                                reason=(
+                                    "Motor Overheating"
+                                ),
+                                percentage=1.0,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+
+        return SimpleNamespace(
+            operational_impact=SimpleNamespace(
+                machines=(
+                    line_b_machine,
+                ),
+            ),
+            downtime_reasons=(
+                SimpleNamespace(
+                    machine_id=22,
+                    dominant_duration_reason=(
+                        "Bearing Wear"
+                    ),
+                    by_reason=(
+                        SimpleNamespace(
+                            reason="Bearing Wear",
+                            percentage=0.75,
+                        ),
+                        SimpleNamespace(
+                            reason="Other",
+                            percentage=0.25,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "get_production_lines",
+        fake_get_production_lines,
+    )
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "get_completed_runs_for_line",
+        fake_get_completed_runs_for_line,
+    )
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "calculate_production_line_operational_intelligence",
+        fake_operational_intelligence,
+    )
+
+    result = (
+        await dashboard_service
+        .calculate_factory_needs_attention(
+            object(),
+        )
+    )
+
+    assert result is not None
+
+    # Each line contains only one machine,
+    # so each would be local rank #1.
+    # FactoryPulse must recompute one
+    # cross-line ranking instead.
+    assert result.machine_id == 22
+    assert result.machine_name == (
+        "Conveyor M-204"
+    )
+
+    assert result.production_line_id == 2
+    assert result.production_line_name == (
+        "Packaging Line B"
+    )
+
+    assert result.priority_rank == 1
+
+    assert (
+        result.recorded_downtime_seconds
+        == 500.0
+    )
+
+    assert result.failure_count == 3
+    assert result.mttr_seconds == 1200.0
+    assert result.mtbf_seconds == 3000.0
+
+    assert result.dominant_reason == (
+        "Bearing Wear"
+    )
+
+    assert (
+        result.dominant_reason_percentage
+        == 0.75
+    )
+
+    

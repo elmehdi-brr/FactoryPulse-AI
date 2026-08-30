@@ -4779,3 +4779,25 @@ a {
   font-size: 13px;
   font-weight: 650;
 }
+
+/* =========================================================
+   LIVE OPERATIONAL ATTENTION
+   ========================================================= */
+
+.attention-reasons strong {
+  color: #dfe5e8;
+  font-size: inherit;
+  font-weight: 680;
+}
+
+.attention-panel .dashboard-panel-state {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.reason-fill {
+  min-width: 0;
+}
