@@ -116,6 +116,20 @@ class DashboardOverviewMetrics:
         DashboardRecentAlertMetrics
     ]
 
+    efficiency_trend: list[
+        DashboardEfficiencyTrendPointMetrics
+    ]
+
+@dataclass(frozen=True, slots=True)
+class DashboardEfficiencyTrendPointMetrics:
+    start_at: datetime
+    end_at: datetime
+
+    run_count: int
+
+    oee: float
+    availability: float
+
 
 def validate_dashboard_period(
     start_at: datetime | None,
@@ -485,6 +499,165 @@ async def calculate_factory_needs_attention(
             dominant_percentage
         ),
     )
+async def calculate_factory_efficiency_trend(
+    db: AsyncSession,
+    production_runs: list[ProductionRun],
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    bucket_count: int = 6,
+) -> list[DashboardEfficiencyTrendPointMetrics]:
+    if bucket_count <= 0:
+        raise DashboardServiceError(
+            "bucket_count must be greater than 0"
+        )
+
+    completed_runs = [
+        production_run
+        for production_run in production_runs
+        if (
+            production_run.status == "completed"
+            and production_run.ended_at is not None
+        )
+    ]
+
+    if not completed_runs:
+        return []
+
+    trend_start = (
+        start_at
+        if start_at is not None
+        else min(
+            production_run.started_at
+            for production_run in completed_runs
+        )
+    )
+
+    trend_end = (
+        end_at
+        if end_at is not None
+        else max(
+            production_run.ended_at
+            for production_run in completed_runs
+            if production_run.ended_at is not None
+        )
+    )
+
+    if trend_end < trend_start:
+        raise DashboardServiceError(
+            "Efficiency trend period is invalid"
+        )
+
+    if trend_end == trend_start:
+        try:
+            metrics = (
+                await calculate_aggregated_oee_for_runs(
+                    db,
+                    completed_runs,
+                )
+            )
+        except ProductionAnalyticsServiceError as exc:
+            raise DashboardServiceError(
+                str(exc)
+            ) from exc
+
+        return [
+            DashboardEfficiencyTrendPointMetrics(
+                start_at=trend_start,
+                end_at=trend_end,
+                run_count=metrics.run_count,
+                oee=metrics.oee,
+                availability=metrics.availability,
+            )
+        ]
+
+    trend_duration = (
+        trend_end - trend_start
+    )
+
+    bucket_width = (
+        trend_duration / bucket_count
+    )
+
+    buckets: list[list[ProductionRun]] = [
+        []
+        for _ in range(bucket_count)
+    ]
+
+    for production_run in completed_runs:
+        completed_at = (
+            production_run.ended_at
+        )
+
+        if completed_at is None:
+            continue
+
+        relative_position = (
+            (completed_at - trend_start)
+            / trend_duration
+        )
+
+        bucket_index = int(
+            relative_position * bucket_count
+        )
+
+        bucket_index = max(
+            0,
+            min(
+                bucket_index,
+                bucket_count - 1,
+            ),
+        )
+
+        buckets[bucket_index].append(
+            production_run
+        )
+
+    trend_points: list[
+        DashboardEfficiencyTrendPointMetrics
+    ] = []
+
+    for index, bucket_runs in enumerate(
+        buckets
+    ):
+        if not bucket_runs:
+            continue
+
+        bucket_start = (
+            trend_start
+            + bucket_width * index
+        )
+
+        if index == bucket_count - 1:
+            bucket_end = trend_end
+        else:
+            bucket_end = (
+                trend_start
+                + bucket_width * (index + 1)
+            )
+
+        try:
+            metrics = (
+                await calculate_aggregated_oee_for_runs(
+                    db,
+                    bucket_runs,
+                )
+            )
+        except ProductionAnalyticsServiceError as exc:
+            raise DashboardServiceError(
+                str(exc)
+            ) from exc
+
+        trend_points.append(
+            DashboardEfficiencyTrendPointMetrics(
+                start_at=bucket_start,
+                end_at=bucket_end,
+                run_count=metrics.run_count,
+                oee=metrics.oee,
+                availability=metrics.availability,
+            )
+        )
+
+    return trend_points
 
 async def calculate_dashboard_overview(
     db: AsyncSession,
@@ -604,6 +777,15 @@ async def calculate_dashboard_overview(
         )
     )
 
+    efficiency_trend = (
+        await calculate_factory_efficiency_trend(
+            db,
+            all_completed_runs,
+            start_at=start_at,
+            end_at=end_at,
+        )
+    )
+
     return DashboardOverviewMetrics(
         start_at=start_at,
         end_at=end_at,
@@ -627,4 +809,5 @@ async def calculate_dashboard_overview(
         machine_health=machine_health,
         recent_alerts=recent_alerts,
         needs_attention=needs_attention,
+        efficiency_trend=efficiency_trend,
     )

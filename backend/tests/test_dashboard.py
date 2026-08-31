@@ -78,7 +78,7 @@ async def test_dashboard_overview_available_to_all_roles(
 
     assert data["recent_alerts"] == []
     assert data["needs_attention"] is None
-
+    assert data["efficiency_trend"] == []
 
 async def test_dashboard_overview_requires_authentication(
     client: AsyncClient,
@@ -133,13 +133,83 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
 
     runs_by_line = {
         1: [
-            SimpleNamespace(id=1),
+            SimpleNamespace(
+                id=1,
+                status="completed",
+                started_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    6,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+                ended_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    7,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
         ],
         2: [
-            SimpleNamespace(id=2),
+            SimpleNamespace(
+                id=2,
+                status="completed",
+                started_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    7,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+                ended_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    8,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
         ],
         3: [],
     }
+
+    async def fake_calculate_factory_efficiency_trend(
+        db: object,
+        production_runs,
+        start_at=None,
+        end_at=None,
+        bucket_count: int = 6,
+    ):
+        return [
+            dashboard_service
+            .DashboardEfficiencyTrendPointMetrics(
+                start_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    6,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+                end_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    8,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+                run_count=2,
+                oee=0.62,
+                availability=0.75,
+            )
+        ]
 
     async def fake_get_production_lines(
         db: object,
@@ -166,6 +236,12 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
         dashboard_service,
         "calculate_factory_needs_attention",
         fake_calculate_factory_needs_attention,
+    )
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "calculate_factory_efficiency_trend",
+        fake_calculate_factory_efficiency_trend,
     )
 
     async def fake_calculate_aggregated_oee_for_runs(
@@ -315,6 +391,13 @@ async def test_dashboard_overview_uses_true_factory_aggregation(
 
     assert result.recent_alerts == []
     assert result.needs_attention is None
+
+    assert len(result.efficiency_trend) == 1
+    assert result.efficiency_trend[0].oee == 0.62
+    assert (
+        result.efficiency_trend[0].availability
+        == 0.75
+    )
 
 
 
@@ -515,11 +598,50 @@ async def test_factory_needs_attention_recomputes_priority_across_lines(
 
     runs_by_line = {
         1: [
-            SimpleNamespace(id=101),
+            SimpleNamespace(
+                id=1,
+                status="completed",
+                started_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    6,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+                ended_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    7,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
         ],
         2: [
-            SimpleNamespace(id=201),
+            SimpleNamespace(
+                id=2,
+                status="completed",
+                started_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    7,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+                ended_at=datetime(
+                    2026,
+                    8,
+                    30,
+                    8,
+                    0,
+                    tzinfo=timezone.utc,
+                ),
+            ),
         ],
+        3: [],
     }
 
     line_a_machine = SimpleNamespace(
@@ -681,4 +803,249 @@ async def test_factory_needs_attention_recomputes_priority_across_lines(
         == 0.75
     )
 
+
     
+
+async def test_factory_efficiency_trend_aggregates_runs_by_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trend_start = datetime(
+        2026,
+        8,
+        30,
+        6,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    trend_end = datetime(
+        2026,
+        8,
+        30,
+        12,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    production_runs = [
+        SimpleNamespace(
+            id=1,
+            production_line_id=1,
+            status="completed",
+            started_at=datetime(
+                2026,
+                8,
+                30,
+                6,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                30,
+                6,
+                30,
+                tzinfo=timezone.utc,
+            ),
+        ),
+        SimpleNamespace(
+            id=2,
+            production_line_id=2,
+            status="completed",
+            started_at=datetime(
+                2026,
+                8,
+                30,
+                6,
+                45,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                30,
+                7,
+                30,
+                tzinfo=timezone.utc,
+            ),
+        ),
+        SimpleNamespace(
+            id=3,
+            production_line_id=1,
+            status="completed",
+            started_at=datetime(
+                2026,
+                8,
+                30,
+                8,
+                15,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                30,
+                9,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        ),
+    ]
+
+    aggregated_run_sets: list[
+        set[int]
+    ] = []
+
+    async def fake_calculate_aggregated_oee_for_runs(
+        db: object,
+        runs,
+    ) -> AggregatedOEEMetrics:
+        run_ids = {
+            run.id
+            for run in runs
+        }
+
+        aggregated_run_sets.append(
+            run_ids
+        )
+
+        if run_ids == {1, 2}:
+            return make_oee_metrics(
+                oee=0.72,
+                availability=0.80,
+                run_count=2,
+            )
+
+        if run_ids == {3}:
+            return make_oee_metrics(
+                oee=0.64,
+                availability=0.74,
+            )
+
+        raise AssertionError(
+            f"Unexpected run ids: {run_ids}"
+        )
+
+    monkeypatch.setattr(
+        dashboard_service,
+        "calculate_aggregated_oee_for_runs",
+        fake_calculate_aggregated_oee_for_runs,
+    )
+
+    result = (
+        await dashboard_service
+        .calculate_factory_efficiency_trend(
+            object(),
+            production_runs,
+            start_at=trend_start,
+            end_at=trend_end,
+            bucket_count=3,
+        )
+    )
+
+    assert aggregated_run_sets == [
+        {1, 2},
+        {3},
+    ]
+
+    # The third 10:00–12:00 bucket is empty
+    # and must not become a fake zero point.
+    assert len(result) == 2
+
+    first = result[0]
+
+    assert first.start_at == datetime(
+        2026,
+        8,
+        30,
+        6,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    assert first.end_at == datetime(
+        2026,
+        8,
+        30,
+        8,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    assert first.run_count == 2
+    assert first.oee == 0.72
+    assert first.availability == 0.80
+
+    second = result[1]
+
+    assert second.start_at == datetime(
+        2026,
+        8,
+        30,
+        8,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    assert second.end_at == datetime(
+        2026,
+        8,
+        30,
+        10,
+        0,
+        tzinfo=timezone.utc,
+    )
+
+    assert second.run_count == 1
+    assert second.oee == 0.64
+    assert second.availability == 0.74
+
+
+async def test_factory_efficiency_trend_returns_empty_without_completed_runs(
+) -> None:
+    production_runs = [
+        SimpleNamespace(
+            id=1,
+            status="running",
+            started_at=datetime(
+                2026,
+                8,
+                30,
+                6,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=None,
+        ),
+        SimpleNamespace(
+            id=2,
+            status="cancelled",
+            started_at=datetime(
+                2026,
+                8,
+                30,
+                7,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            ended_at=datetime(
+                2026,
+                8,
+                30,
+                8,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        ),
+    ]
+
+    result = (
+        await dashboard_service
+        .calculate_factory_efficiency_trend(
+            object(),
+            production_runs,
+        )
+    )
+
+    assert result == []

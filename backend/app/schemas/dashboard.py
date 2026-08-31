@@ -63,6 +63,14 @@ class DashboardNeedsAttentionResponse(BaseModel):
     dominant_reason: str | None
     dominant_reason_percentage: float | None
 
+class DashboardEfficiencyTrendPointResponse(BaseModel):
+    start_at: datetime
+    end_at: datetime
+
+    run_count: int
+
+    oee: float
+    availability: float
 
 class DashboardOverviewResponse(BaseModel):
     period: DashboardPeriodResponse
@@ -79,4 +87,8 @@ class DashboardOverviewResponse(BaseModel):
 
     recent_alerts: list[
         DashboardRecentAlertResponse
+    ]
+
+    efficiency_trend: list[
+        DashboardEfficiencyTrendPointResponse
     ]

@@ -20,6 +20,7 @@ from app.schemas.dashboard import (
     DashboardPeriodResponse,
     DashboardProductionLineSummaryResponse,
     DashboardRecentAlertResponse,
+    DashboardEfficiencyTrendPointResponse,
 )
 from app.services.dashboard_service import (
     DashboardServiceError,
@@ -66,6 +67,18 @@ async def get_dashboard_overview_endpoint(
             start_at=metrics.start_at,
             end_at=metrics.end_at,
         ),
+
+        efficiency_trend=[
+            DashboardEfficiencyTrendPointResponse(
+                start_at=point.start_at,
+                end_at=point.end_at,
+                run_count=point.run_count,
+                oee=point.oee,
+                availability=point.availability,
+            )
+            for point in metrics.efficiency_trend
+        ],
+
         kpis=DashboardKPIResponse(
             overall_oee=metrics.overall_oee,
             availability=metrics.availability,

@@ -59,6 +59,13 @@ export type DashboardNeedsAttention = {
   dominant_reason_percentage: number | null
 }
 
+export type DashboardEfficiencyTrendPoint = {
+  start_at: string
+  end_at: string
+  run_count: number
+  oee: number
+  availability: number
+}
 
 export type DashboardOverviewResponse = {
   period: DashboardPeriod
@@ -71,4 +78,6 @@ export type DashboardOverviewResponse = {
 
   recent_alerts: DashboardRecentAlert[]
   needs_attention: DashboardNeedsAttention | null
+
+  efficiency_trend: DashboardEfficiencyTrendPoint[]
 }
