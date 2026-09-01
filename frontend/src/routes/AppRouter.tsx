@@ -11,6 +11,7 @@ import { OverviewPage } from '../pages/OverviewPage'
 import { PlaceholderPage } from '../pages/PlaceholderPage'
 import { ProtectedRoute } from './ProtectedRoute'
 import { LoginPage } from '../pages/LoginPage'
+import { ProductionPage } from '../pages/ProductionPage'
 
 export function AppRouter() {
   return (
@@ -64,13 +65,7 @@ export function AppRouter() {
 
               <Route
                 path="/production"
-                element={
-                  <PlaceholderPage
-                    eyebrow="Production Intelligence"
-                    title="Production"
-                    description="Production runs, OEE, downtime, line performance, and operational trends will live here."
-                  />
-                }
+                element={<ProductionPage />}
               />
 
               <Route
