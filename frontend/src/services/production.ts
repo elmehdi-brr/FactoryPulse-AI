@@ -1,8 +1,10 @@
 import { apiRequest } from './api'
 import type {
   ProductionLine,
-  ProductionLineOEE,
   ProductionLineDowntime,
+  ProductionLineOEE,
+  ProductionLineOperationalTrends,
+  ProductionRun,
 } from '../types/production'
 
 export async function getProductionLines(): Promise<
@@ -26,5 +28,21 @@ export async function getProductionLineDowntime(
 ): Promise<ProductionLineDowntime> {
   return apiRequest<ProductionLineDowntime>(
     `/production-lines/${productionLineId}/downtime-analytics`,
+  )
+}
+
+export async function getProductionLineOperationalTrends(
+  productionLineId: number,
+): Promise<ProductionLineOperationalTrends> {
+  return apiRequest<ProductionLineOperationalTrends>(
+    `/production-lines/${productionLineId}/operational-trends`,
+  )
+}
+
+export async function getProductionLineRuns(
+  productionLineId: number,
+): Promise<ProductionRun[]> {
+  return apiRequest<ProductionRun[]>(
+    `/production-lines/${productionLineId}/production-runs`,
   )
 }

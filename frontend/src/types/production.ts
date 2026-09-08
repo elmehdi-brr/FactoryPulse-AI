@@ -59,3 +59,79 @@ export type ProductionLineDowntime = {
   by_reason: ProductionLineDowntimeReason[]
   by_machine: ProductionLineDowntimeMachine[]
 }
+
+export type OperationalTrendDirection =
+  | 'improved'
+  | 'worsened'
+  | 'unchanged'
+  | 'not_comparable'
+
+export type OperationalMetricTrend = {
+  current_value: number | null
+  previous_value: number | null
+  delta: number | null
+  direction: OperationalTrendDirection
+}
+
+export type MachineOperationalTrend = {
+  machine_id: number
+  machine_name: string
+  machine_code: string
+
+  recorded_downtime: OperationalMetricTrend
+  failure_count: OperationalMetricTrend
+  mttr: OperationalMetricTrend
+  mtbf: OperationalMetricTrend
+}
+
+export type OperationalTrendSummary = {
+  oee: OperationalMetricTrend
+  availability: OperationalMetricTrend
+  performance: OperationalMetricTrend
+  quality: OperationalMetricTrend
+
+  recorded_downtime: OperationalMetricTrend
+  total_failure_count: OperationalMetricTrend
+
+  machines: MachineOperationalTrend[]
+}
+
+export type ProductionLineOperationalTrends = {
+  production_line_id: number
+
+  current_period: {
+    start_at: string
+    end_at: string
+  }
+
+  previous_period: {
+    start_at: string
+    end_at: string
+  }
+
+  trends: OperationalTrendSummary
+}
+
+export type ProductionRunStatus =
+  | 'running'
+  | 'completed'
+  | 'cancelled'
+
+export type ProductionRun = {
+  id: number
+  production_line_id: number
+
+  started_at: string
+  ended_at: string | null
+
+  status: ProductionRunStatus
+
+  target_quantity: number | null
+  total_quantity: number
+  good_quantity: number
+  reject_quantity: number
+
+  ideal_cycle_time_seconds: number | null
+
+  created_at: string
+}

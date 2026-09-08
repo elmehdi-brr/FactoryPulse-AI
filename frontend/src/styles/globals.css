@@ -5345,3 +5345,127 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+
+/* =========================================================
+   PRODUCTION RUNS
+   ========================================================= */
+
+.production-runs {
+  margin-top: 28px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.production-runs-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.production-run-row {
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 1fr)
+    minmax(0, 2fr);
+
+  gap: 22px;
+  align-items: center;
+
+  padding: 16px;
+
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 12px;
+
+  background: rgba(255, 255, 255, 0.014);
+}
+
+.production-run-main {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.production-run-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.production-run-heading strong {
+  color: #dce3e7;
+  font-size: 14px;
+  font-weight: 620;
+}
+
+.production-run-main > span {
+  color: #7d8992;
+  font-size: 11.5px;
+}
+
+.production-run-status {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 4px 8px;
+
+  border-radius: 999px;
+
+  font-size: 10.5px;
+  font-weight: 650;
+  text-transform: capitalize;
+}
+
+.production-run-status-running {
+  color: #d6c58a;
+  background: rgba(214, 197, 138, 0.10);
+}
+
+.production-run-status-completed {
+  color: #8bcfa8;
+  background: rgba(139, 207, 168, 0.10);
+}
+
+.production-run-status-cancelled {
+  color: #d28b8b;
+  background: rgba(210, 139, 139, 0.10);
+}
+
+.production-run-metrics {
+  display: grid;
+  grid-template-columns:
+    repeat(5, minmax(0, 1fr));
+
+  gap: 12px;
+}
+
+.production-run-metrics > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.production-run-metrics span {
+  color: #77838b;
+  font-size: 11px;
+}
+
+.production-run-metrics strong {
+  color: #d8e0e4;
+  font-size: 13px;
+  font-weight: 620;
+}
+
+@media (max-width: 900px) {
+  .production-run-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .production-run-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}

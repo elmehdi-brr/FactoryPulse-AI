@@ -15,12 +15,16 @@ import { ApiError } from '../services/api'
 import {
   getProductionLineDowntime,
   getProductionLineOEE,
+  getProductionLineOperationalTrends,
+  getProductionLineRuns,
   getProductionLines,
 } from '../services/production'
 import type {
   ProductionLine,
   ProductionLineDowntime,
   ProductionLineOEE,
+  ProductionLineOperationalTrends,
+  ProductionRun,
 } from '../types/production'
 
 function formatPercentage(
@@ -33,6 +37,84 @@ function formatHours(
   seconds: number,
 ): string {
   return `${(seconds / 3600).toFixed(1)}h`
+}
+
+function formatTrendValue(
+  value: number | null,
+  type: 'percentage' | 'hours' | 'count',
+): string {
+  if (value === null) {
+    return '—'
+  }
+
+  if (type === 'percentage') {
+    return formatPercentage(value)
+  }
+
+  if (type === 'hours') {
+    return formatHours(value)
+  }
+
+  return value.toLocaleString()
+}
+
+function trendLabel(
+  direction:
+    | 'improved'
+    | 'worsened'
+    | 'unchanged'
+    | 'not_comparable',
+): string {
+  switch (direction) {
+    case 'improved':
+      return 'Improved'
+    case 'worsened':
+      return 'Worsened'
+    case 'unchanged':
+      return 'Unchanged'
+    case 'not_comparable':
+      return 'Not comparable'
+  }
+}
+
+function trendClassName(
+  direction:
+    | 'improved'
+    | 'worsened'
+    | 'unchanged'
+    | 'not_comparable',
+): string {
+  switch (direction) {
+    case 'improved':
+      return 'production-trend-positive'
+    case 'worsened':
+      return 'production-trend-negative'
+    case 'unchanged':
+      return 'production-trend-neutral'
+    case 'not_comparable':
+      return 'production-trend-neutral'
+  }
+}
+
+function formatTrendDelta(
+  delta: number | null,
+  type: 'percentage' | 'hours' | 'count',
+): string {
+  if (delta === null) {
+    return '—'
+  }
+
+  const sign = delta > 0 ? '+' : ''
+
+  if (type === 'percentage') {
+    return `${sign}${(delta * 100).toFixed(1)} pp`
+  }
+
+  if (type === 'hours') {
+    return `${sign}${(delta / 3600).toFixed(1)}h`
+  }
+
+  return `${sign}${delta.toLocaleString()}`
 }
 
 export function ProductionPage() {
@@ -61,6 +143,40 @@ export function ProductionPage() {
   ] = useState<ProductionLineDowntime | null>(
     null,
   )
+
+  const [
+    selectedLineTrends,
+    setSelectedLineTrends,
+  ] = useState<ProductionLineOperationalTrends | null>(
+    null,
+  )
+
+  const [
+    selectedLineRuns,
+    setSelectedLineRuns,
+  ] = useState<ProductionRun[] | null>(
+    null,
+  )
+
+  const [
+    loadingRuns,
+    setLoadingRuns,
+  ] = useState(false)
+
+  const [
+    runsError,
+    setRunsError,
+  ] = useState<string | null>(null)
+
+  const [
+    loadingTrends,
+    setLoadingTrends,
+  ] = useState(false)
+
+  const [
+    trendsError,
+    setTrendsError,
+  ] = useState<string | null>(null)
 
   const [
     loadingOEE,
@@ -222,6 +338,114 @@ export function ProductionPage() {
     }
 
     void loadSelectedLineDowntime()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedLineId])
+
+  useEffect(() => {
+    if (selectedLineId === null) {
+      return
+    }
+
+    const lineId = selectedLineId
+    let cancelled = false
+
+    async function loadSelectedLineTrends() {
+      setLoadingTrends(true)
+      setTrendsError(null)
+      setSelectedLineTrends(null)
+
+      try {
+        const response =
+          await getProductionLineOperationalTrends(
+            lineId,
+          )
+
+        if (!cancelled) {
+          setSelectedLineTrends(response)
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        if (
+          requestError instanceof ApiError
+        ) {
+          setTrendsError(
+            requestError.message,
+          )
+        } else {
+          setTrendsError(
+            'Unable to load operational trends.',
+          )
+        }
+
+        setSelectedLineTrends(null)
+      } finally {
+        if (!cancelled) {
+          setLoadingTrends(false)
+        }
+      }
+    }
+
+    void loadSelectedLineTrends()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedLineId])
+
+  useEffect(() => {
+    if (selectedLineId === null) {
+      return
+    }
+
+    const lineId = selectedLineId
+    let cancelled = false
+
+    async function loadSelectedLineRuns() {
+      setLoadingRuns(true)
+      setRunsError(null)
+      setSelectedLineRuns(null)
+
+      try {
+        const response =
+          await getProductionLineRuns(
+            lineId,
+          )
+
+        if (!cancelled) {
+          setSelectedLineRuns(response)
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        if (
+          requestError instanceof ApiError
+        ) {
+          setRunsError(
+            requestError.message,
+          )
+        } else {
+          setRunsError(
+            'Unable to load production runs.',
+          )
+        }
+
+        setSelectedLineRuns(null)
+      } finally {
+        if (!cancelled) {
+          setLoadingRuns(false)
+        }
+      }
+    }
+
+    void loadSelectedLineRuns()
 
     return () => {
       cancelled = true
@@ -737,6 +961,470 @@ export function ProductionPage() {
                     </div>
                   )}
                 </>
+              )}
+          </section>
+        )}
+
+        {selectedLine && (
+          <section className="production-trends">
+            <div className="production-section-header">
+              <div>
+                <span className="panel-eyebrow">
+                  Operational intelligence
+                </span>
+
+                <h2>
+                  Operational trends
+                </h2>
+              </div>
+            </div>
+
+            {loadingTrends && (
+              <div className="dashboard-panel-state">
+                Loading operational trends...
+              </div>
+            )}
+
+            {!loadingTrends && trendsError && (
+              <div
+                className="dashboard-data-error"
+                role="alert"
+              >
+                <RefreshCw size={17} />
+
+                <div>
+                  <strong>
+                    Operational trends unavailable
+                  </strong>
+
+                  <span>
+                    {trendsError}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {!loadingTrends
+              && !trendsError
+              && selectedLineTrends
+              && (
+                <>
+                  <div className="production-trend-periods">
+                    <div>
+                      <span>
+                        Current period
+                      </span>
+
+                      <strong>
+                        {new Date(
+                          selectedLineTrends
+                            .current_period
+                            .start_at,
+                        ).toLocaleDateString()}
+                        {' '}
+                        –
+                        {' '}
+                        {new Date(
+                          selectedLineTrends
+                            .current_period
+                            .end_at,
+                        ).toLocaleDateString()}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>
+                        Previous period
+                      </span>
+
+                      <strong>
+                        {new Date(
+                          selectedLineTrends
+                            .previous_period
+                            .start_at,
+                        ).toLocaleDateString()}
+                        {' '}
+                        –
+                        {' '}
+                        {new Date(
+                          selectedLineTrends
+                            .previous_period
+                            .end_at,
+                        ).toLocaleDateString()}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="production-trend-grid">
+                    {[
+                      {
+                        label: 'OEE',
+                        trend:
+                          selectedLineTrends
+                            .trends.oee,
+                        type: 'percentage' as const,
+                      },
+                      {
+                        label: 'Availability',
+                        trend:
+                          selectedLineTrends
+                            .trends.availability,
+                        type: 'percentage' as const,
+                      },
+                      {
+                        label: 'Performance',
+                        trend:
+                          selectedLineTrends
+                            .trends.performance,
+                        type: 'percentage' as const,
+                      },
+                      {
+                        label: 'Quality',
+                        trend:
+                          selectedLineTrends
+                            .trends.quality,
+                        type: 'percentage' as const,
+                      },
+                      {
+                        label: 'Downtime',
+                        trend:
+                          selectedLineTrends
+                            .trends.recorded_downtime,
+                        type: 'hours' as const,
+                      },
+                      {
+                        label: 'Failures',
+                        trend:
+                          selectedLineTrends
+                            .trends.total_failure_count,
+                        type: 'count' as const,
+                      },
+                    ].map((item) => (
+                      <div
+                        key={item.label}
+                        className="production-trend-card"
+                      >
+                        <span>
+                          {item.label}
+                        </span>
+
+                        <strong>
+                          {formatTrendValue(
+                            item.trend.current_value,
+                            item.type,
+                          )}
+                        </strong>
+
+                        <div
+                          className={trendClassName(
+                            item.trend.direction,
+                          )}
+                        >
+                          <span>
+                            {trendLabel(
+                              item.trend.direction,
+                            )}
+                          </span>
+
+                          <strong>
+                            {formatTrendDelta(
+                              item.trend.delta,
+                              item.type,
+                            )}
+                          </strong>
+                        </div>
+
+                        <small>
+                          Previous:{' '}
+                          {formatTrendValue(
+                            item.trend.previous_value,
+                            item.type,
+                          )}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="production-machine-trends">
+                    <div className="production-subsection-header">
+                      <h3>
+                        Machine reliability trends
+                      </h3>
+                    </div>
+
+                    {selectedLineTrends.trends
+                      .machines.length === 0 ? (
+                      <div className="dashboard-panel-state">
+                        No machine trend data available.
+                      </div>
+                    ) : (
+                      <div className="production-machine-trend-list">
+                        {selectedLineTrends.trends
+                          .machines.map((machine) => (
+                            <div
+                              key={machine.machine_id}
+                              className="production-machine-trend-row"
+                            >
+                              <div className="production-machine-trend-identity">
+                                <strong>
+                                  {machine.machine_name}
+                                </strong>
+
+                                <span>
+                                  {machine.machine_code}
+                                </span>
+                              </div>
+
+                              <div className="production-machine-trend-metrics">
+                                <div>
+                                  <span>
+                                    Downtime
+                                  </span>
+
+                                  <strong
+                                    className={trendClassName(
+                                      machine
+                                        .recorded_downtime
+                                        .direction,
+                                    )}
+                                  >
+                                    {formatTrendDelta(
+                                      machine
+                                        .recorded_downtime
+                                        .delta,
+                                      'hours',
+                                    )}
+                                  </strong>
+                                </div>
+
+                                <div>
+                                  <span>
+                                    Failures
+                                  </span>
+
+                                  <strong
+                                    className={trendClassName(
+                                      machine
+                                        .failure_count
+                                        .direction,
+                                    )}
+                                  >
+                                    {formatTrendDelta(
+                                      machine
+                                        .failure_count
+                                        .delta,
+                                      'count',
+                                    )}
+                                  </strong>
+                                </div>
+
+                                <div>
+                                  <span>
+                                    MTTR
+                                  </span>
+
+                                  <strong
+                                    className={trendClassName(
+                                      machine.mttr
+                                        .direction,
+                                    )}
+                                  >
+                                    {formatTrendDelta(
+                                      machine.mttr.delta,
+                                      'hours',
+                                    )}
+                                  </strong>
+                                </div>
+
+                                <div>
+                                  <span>
+                                    MTBF
+                                  </span>
+
+                                  <strong
+                                    className={trendClassName(
+                                      machine.mtbf
+                                        .direction,
+                                    )}
+                                  >
+                                    {formatTrendDelta(
+                                      machine.mtbf.delta,
+                                      'hours',
+                                    )}
+                                  </strong>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+          </section>
+        )}
+
+        {selectedLine && (
+          <section className="production-runs">
+            <div className="production-section-header">
+              <div>
+                <span className="panel-eyebrow">
+                  Production activity
+                </span>
+
+                <h2>
+                  Production runs
+                </h2>
+              </div>
+            </div>
+
+            {loadingRuns && (
+              <div className="dashboard-panel-state">
+                Loading production runs...
+              </div>
+            )}
+
+            {!loadingRuns && runsError && (
+              <div
+                className="dashboard-data-error"
+                role="alert"
+              >
+                <RefreshCw size={17} />
+
+                <div>
+                  <strong>
+                    Production runs unavailable
+                  </strong>
+
+                  <span>
+                    {runsError}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {!loadingRuns
+              && !runsError
+              && selectedLineRuns
+              && selectedLineRuns.length === 0 && (
+                <div className="dashboard-panel-state">
+                  No production runs recorded for this line.
+                </div>
+              )}
+
+            {!loadingRuns
+              && !runsError
+              && selectedLineRuns
+              && selectedLineRuns.length > 0 && (
+                <div className="production-runs-list">
+                  {selectedLineRuns.map((run) => {
+                    const durationSeconds =
+                      run.ended_at
+                        ? (
+                            new Date(
+                              run.ended_at,
+                            ).getTime()
+                            - new Date(
+                              run.started_at,
+                            ).getTime()
+                          ) / 1000
+                        : null
+
+                    return (
+                      <div
+                        key={run.id}
+                        className="production-run-row"
+                      >
+                        <div className="production-run-main">
+                          <div className="production-run-heading">
+                            <strong>
+                              Run #{run.id}
+                            </strong>
+
+                            <span
+                              className={`production-run-status production-run-status-${run.status}`}
+                            >
+                              {run.status}
+                            </span>
+                          </div>
+
+                          <span>
+                            Started{' '}
+                            {new Date(
+                              run.started_at,
+                            ).toLocaleString()}
+                          </span>
+
+                          {run.ended_at && (
+                            <span>
+                              Ended{' '}
+                              {new Date(
+                                run.ended_at,
+                              ).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="production-run-metrics">
+                          <div>
+                            <span>
+                              Target
+                            </span>
+
+                            <strong>
+                              {run.target_quantity
+                                ?? '—'}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>
+                              Total
+                            </span>
+
+                            <strong>
+                              {run.total_quantity}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>
+                              Good
+                            </span>
+
+                            <strong>
+                              {run.good_quantity}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>
+                              Reject
+                            </span>
+
+                            <strong>
+                              {run.reject_quantity}
+                            </strong>
+                          </div>
+
+                          <div>
+                            <span>
+                              Duration
+                            </span>
+
+                            <strong>
+                              {durationSeconds === null
+                                ? 'Running'
+                                : formatHours(
+                                    durationSeconds,
+                                  )}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
           </section>
         )}
