@@ -1,5 +1,7 @@
 import {
   BarChart3,
+  ChevronDown,
+  ChevronUp,
   Factory,
   RefreshCw,
 } from 'lucide-react'
@@ -17,6 +19,7 @@ import {
   getProductionLineOEE,
   getProductionLineOperationalTrends,
   getProductionLineRuns,
+  getProductionRunOEE,
   getProductionLines,
 } from '../services/production'
 import type {
@@ -25,6 +28,7 @@ import type {
   ProductionLineOEE,
   ProductionLineOperationalTrends,
   ProductionRun,
+  ProductionRunOEE,
 } from '../types/production'
 
 function formatPercentage(
@@ -117,6 +121,19 @@ function formatTrendDelta(
   return `${sign}${delta.toLocaleString()}`
 }
 
+function formatRunStatus(
+  status: ProductionRun['status'],
+): string {
+  switch (status) {
+    case 'running':
+      return 'Running'
+    case 'completed':
+      return 'Completed'
+    case 'cancelled':
+      return 'Cancelled'
+  }
+}
+
 export function ProductionPage() {
   const [
     productionLines,
@@ -201,6 +218,28 @@ export function ProductionPage() {
   const [
     downtimeError,
     setDowntimeError,
+  ] = useState<string | null>(null)
+
+  const [
+    selectedRunId,
+    setSelectedRunId,
+  ] = useState<number | null>(null)
+
+  const [
+    selectedRunOEE,
+    setSelectedRunOEE,
+  ] = useState<ProductionRunOEE | null>(
+    null,
+  )
+
+  const [
+    loadingRunOEE,
+    setLoadingRunOEE,
+  ] = useState(false)
+
+  const [
+    runOEEError,
+    setRunOEEError,
   ] = useState<string | null>(null)
 
   useEffect(() => {
@@ -411,6 +450,11 @@ export function ProductionPage() {
       setRunsError(null)
       setSelectedLineRuns(null)
 
+      setSelectedRunId(null)
+      setSelectedRunOEE(null)
+      setRunOEEError(null)
+      setLoadingRunOEE(false)
+
       try {
         const response =
           await getProductionLineRuns(
@@ -451,6 +495,60 @@ export function ProductionPage() {
       cancelled = true
     }
   }, [selectedLineId])
+
+  useEffect(() => {
+    if (selectedRunId === null) {
+      return
+    }
+
+    const runId = selectedRunId
+    let cancelled = false
+
+    async function loadSelectedRunOEE() {
+      setLoadingRunOEE(true)
+      setRunOEEError(null)
+      setSelectedRunOEE(null)
+
+      try {
+        const response =
+          await getProductionRunOEE(
+            runId,
+          )
+
+        if (!cancelled) {
+          setSelectedRunOEE(response)
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        if (
+          requestError instanceof ApiError
+        ) {
+          setRunOEEError(
+            requestError.message,
+          )
+        } else {
+          setRunOEEError(
+            'Unable to load run performance.',
+          )
+        }
+
+        setSelectedRunOEE(null)
+      } finally {
+        if (!cancelled) {
+          setLoadingRunOEE(false)
+        }
+      }
+    }
+
+    void loadSelectedRunOEE()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedRunId])
 
   const loading =
     productionLines === null
@@ -1330,97 +1428,321 @@ export function ProductionPage() {
                           ) / 1000
                         : null
 
+                    const isSelectedRun =
+                      selectedRunId === run.id
+
                     return (
                       <div
                         key={run.id}
-                        className="production-run-row"
+                        className={
+                          isSelectedRun
+                            ? 'production-run-row production-run-row-active'
+                            : 'production-run-row'
+                        }
                       >
-                        <div className="production-run-main">
-                          <div className="production-run-heading">
-                            <strong>
-                              Run #{run.id}
-                            </strong>
+                        <button
+                          type="button"
+                          className="production-run-summary"
+                          aria-expanded={
+                            isSelectedRun
+                          }
+                          aria-controls={`production-run-oee-${run.id}`}
+                          onClick={() => {
+                            setSelectedRunId(
+                              isSelectedRun
+                                ? null
+                                : run.id,
+                            )
+                          }}
+                        >
+                          <div className="production-run-main">
+                            <div className="production-run-heading">
+                              <strong>
+                                Run #{run.id}
+                              </strong>
 
-                            <span
-                              className={`production-run-status production-run-status-${run.status}`}
-                            >
-                              {run.status}
-                            </span>
-                          </div>
+                              <span
+                                className={`production-run-status production-run-status-${run.status}`}
+                              >
+                                {formatRunStatus(
+                                  run.status,
+                                )}
+                              </span>
+                            </div>
 
-                          <span>
-                            Started{' '}
-                            {new Date(
-                              run.started_at,
-                            ).toLocaleString()}
-                          </span>
-
-                          {run.ended_at && (
                             <span>
-                              Ended{' '}
+                              Started{' '}
                               {new Date(
-                                run.ended_at,
+                                run.started_at,
                               ).toLocaleString()}
                             </span>
-                          )}
-                        </div>
 
-                        <div className="production-run-metrics">
-                          <div>
-                            <span>
-                              Target
-                            </span>
-
-                            <strong>
-                              {run.target_quantity
-                                ?? '—'}
-                            </strong>
+                            {run.ended_at && (
+                              <span>
+                                Ended{' '}
+                                {new Date(
+                                  run.ended_at,
+                                ).toLocaleString()}
+                              </span>
+                            )}
                           </div>
 
-                          <div>
-                            <span>
-                              Total
-                            </span>
+                          <div className="production-run-metrics">
+                            <div>
+                              <span>
+                                Target
+                              </span>
 
-                            <strong>
-                              {run.total_quantity}
-                            </strong>
+                              <strong>
+                                {run.target_quantity
+                                  ?? '—'}
+                              </strong>
+                            </div>
+
+                            <div>
+                              <span>
+                                Total
+                              </span>
+
+                              <strong>
+                                {run.total_quantity}
+                              </strong>
+                            </div>
+
+                            <div>
+                              <span>
+                                Good
+                              </span>
+
+                              <strong>
+                                {run.good_quantity}
+                              </strong>
+                            </div>
+
+                            <div>
+                              <span>
+                                Reject
+                              </span>
+
+                              <strong>
+                                {run.reject_quantity}
+                              </strong>
+                            </div>
+
+                            <div>
+                              <span>
+                                Duration
+                              </span>
+
+                              <strong>
+                                {durationSeconds === null
+                                  ? 'Running'
+                                  : formatHours(
+                                      durationSeconds,
+                                    )}
+                              </strong>
+                            </div>
                           </div>
 
-                          <div>
-                            <span>
-                              Good
-                            </span>
+                          <span
+                            className="production-run-expand"
+                            aria-hidden="true"
+                          >
+                            {isSelectedRun ? (
+                              <ChevronUp
+                                size={18}
+                              />
+                            ) : (
+                              <ChevronDown
+                                size={18}
+                              />
+                            )}
+                          </span>
+                        </button>
 
-                            <strong>
-                              {run.good_quantity}
-                            </strong>
-                          </div>
+                        {isSelectedRun && (
+                          <motion.div
+                            id={`production-run-oee-${run.id}`}
+                            className="production-run-oee"
+                            initial={{
+                              opacity: 0,
+                              y: -6,
+                            }}
+                            animate={{
+                              opacity: 1,
+                              y: 0,
+                            }}
+                            transition={{
+                              duration: 0.2,
+                            }}
+                          >
+                            <div className="production-run-oee-header">
+                              <div>
+                                <span className="panel-eyebrow">
+                                  Run performance
+                                </span>
 
-                          <div>
-                            <span>
-                              Reject
-                            </span>
+                                <h3>
+                                  OEE details
+                                </h3>
+                              </div>
 
-                            <strong>
-                              {run.reject_quantity}
-                            </strong>
-                          </div>
+                              <strong>
+                                {loadingRunOEE
+                                  ? 'Loading...'
+                                  : selectedRunOEE
+                                      ?.production_run_id
+                                      === run.id
+                                    ? formatPercentage(
+                                        selectedRunOEE.oee,
+                                      )
+                                    : '—'}
+                              </strong>
+                            </div>
 
-                          <div>
-                            <span>
-                              Duration
-                            </span>
+                            {loadingRunOEE && (
+                              <div className="dashboard-panel-state">
+                                Loading run performance...
+                              </div>
+                            )}
 
-                            <strong>
-                              {durationSeconds === null
-                                ? 'Running'
-                                : formatHours(
-                                    durationSeconds,
-                                  )}
-                            </strong>
-                          </div>
-                        </div>
+                            {!loadingRunOEE
+                              && runOEEError && (
+                                <div
+                                  className="dashboard-data-error"
+                                  role="alert"
+                                >
+                                  <RefreshCw size={16} />
+
+                                  <div>
+                                    <strong>
+                                      Run performance unavailable
+                                    </strong>
+
+                                    <span>
+                                      {runOEEError}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                            {!loadingRunOEE
+                              && !runOEEError
+                              && selectedRunOEE
+                                ?.production_run_id
+                                === run.id
+                              && (
+                                <>
+                                  <div className="production-run-oee-grid">
+                                    <div>
+                                      <span>
+                                        OEE
+                                      </span>
+
+                                      <strong>
+                                        {formatPercentage(
+                                          selectedRunOEE.oee,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>
+                                        Availability
+                                      </span>
+
+                                      <strong>
+                                        {formatPercentage(
+                                          selectedRunOEE
+                                            .availability,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>
+                                        Performance
+                                      </span>
+
+                                      <strong>
+                                        {formatPercentage(
+                                          selectedRunOEE
+                                            .performance,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>
+                                        Quality
+                                      </span>
+
+                                      <strong>
+                                        {formatPercentage(
+                                          selectedRunOEE
+                                            .quality,
+                                        )}
+                                      </strong>
+                                    </div>
+                                  </div>
+
+                                  <div className="production-run-oee-time-grid">
+                                    <div>
+                                      <span>
+                                        Scheduled time
+                                      </span>
+
+                                      <strong>
+                                        {formatHours(
+                                          selectedRunOEE
+                                            .scheduled_time_seconds,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>
+                                        Planned downtime
+                                      </span>
+
+                                      <strong>
+                                        {formatHours(
+                                          selectedRunOEE
+                                            .planned_downtime_seconds,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>
+                                        Unplanned downtime
+                                      </span>
+
+                                      <strong>
+                                        {formatHours(
+                                          selectedRunOEE
+                                            .unplanned_downtime_seconds,
+                                        )}
+                                      </strong>
+                                    </div>
+
+                                    <div>
+                                      <span>
+                                        Operating time
+                                      </span>
+
+                                      <strong>
+                                        {formatHours(
+                                          selectedRunOEE
+                                            .operating_time_seconds,
+                                        )}
+                                      </strong>
+                                    </div>
+                                  </div>
+                                </>
+                              )}
+                          </motion.div>
+                        )}
                       </div>
                     )
                   })}

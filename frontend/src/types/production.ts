@@ -135,3 +135,20 @@ export type ProductionRun = {
 
   created_at: string
 }
+
+export type ProductionRunOEE = {
+  production_run_id: number
+
+  scheduled_time_seconds: number
+
+  planned_downtime_seconds: number
+  planned_production_time_seconds: number
+
+  unplanned_downtime_seconds: number
+  operating_time_seconds: number
+
+  availability: number
+  performance: number
+  quality: number
+  oee: number
+}

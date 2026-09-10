@@ -5,6 +5,7 @@ import type {
   ProductionLineOEE,
   ProductionLineOperationalTrends,
   ProductionRun,
+  ProductionRunOEE,
 } from '../types/production'
 
 export async function getProductionLines(): Promise<
@@ -44,5 +45,13 @@ export async function getProductionLineRuns(
 ): Promise<ProductionRun[]> {
   return apiRequest<ProductionRun[]>(
     `/production-lines/${productionLineId}/production-runs`,
+  )
+}
+
+export async function getProductionRunOEE(
+  productionRunId: number,
+): Promise<ProductionRunOEE> {
+  return apiRequest<ProductionRunOEE>(
+    `/production-runs/${productionRunId}/oee`,
   )
 }
