@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 
 TrendDirection = Literal[

@@ -32,11 +32,23 @@ export async function getProductionLineDowntime(
   )
 }
 
+export type ProductionPeriod = {
+  startAt: Date
+  endAt: Date
+}
+
 export async function getProductionLineOperationalTrends(
   productionLineId: number,
+  period: ProductionPeriod,
 ): Promise<ProductionLineOperationalTrends> {
+  const query = new URLSearchParams({
+    start_at: period.startAt.toISOString(),
+    end_at: period.endAt.toISOString(),
+  })
+
   return apiRequest<ProductionLineOperationalTrends>(
-    `/production-lines/${productionLineId}/operational-trends`,
+    `/production-lines/${productionLineId}`
+    + `/operational-trends?${query.toString()}`,
   )
 }
 

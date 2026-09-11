@@ -30,6 +30,10 @@ import {
 import { useAuth } from '../auth/authContext'
 import { CommandPalette } from '../components/shell/CommandPalette'
 import { NotificationCenter } from '../components/shell/NotificationCenter'
+import { getDashboardOverview } from '../services/dashboard'
+import type {
+  DashboardRecentAlert,
+} from '../types/dashboard'
 
 const navigation = [
   {
@@ -129,7 +133,27 @@ export function DashboardLayout() {
   const [
     unreadNotificationCount,
     setUnreadNotificationCount,
-  ] = useState(3)
+  ] = useState(0)
+
+  const [
+    recentAlerts,
+    setRecentAlerts,
+  ] = useState<DashboardRecentAlert[]>([])
+
+  const [
+    openAlertCount,
+    setOpenAlertCount,
+  ] = useState<number | null>(null)
+
+  const [
+    alertsLoading,
+    setAlertsLoading,
+  ] = useState(true)
+
+  const [
+    alertsError,
+    setAlertsError,
+  ] = useState<string | null>(null)
 
   const isMac =
     typeof navigator !== 'undefined'
@@ -151,6 +175,53 @@ export function DashboardLayout() {
 
   const roleLabel =
     getRoleLabel(user?.role_name)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadAlerts() {
+      setAlertsLoading(true)
+      setAlertsError(null)
+
+      try {
+        const overview =
+          await getDashboardOverview()
+
+        if (cancelled) {
+          return
+        }
+
+        setRecentAlerts(
+          overview.recent_alerts,
+        )
+
+        setOpenAlertCount(
+          overview.kpis.active_alert_count,
+        )
+      } catch {
+        if (cancelled) {
+          return
+        }
+
+        setRecentAlerts([])
+        setOpenAlertCount(null)
+
+        setAlertsError(
+          'Unable to load notifications.',
+        )
+      } finally {
+        if (!cancelled) {
+          setAlertsLoading(false)
+        }
+      }
+    }
+
+    void loadAlerts()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     function handleKeyboardShortcut(
@@ -305,9 +376,11 @@ export function DashboardLayout() {
                     </span>
 
                     {item.label === 'Alerts'
+                      && openAlertCount !== null
+                      && openAlertCount > 0
                       && (
                         <span className="navigation-badge">
-                          7
+                          {openAlertCount}
                         </span>
                       )}
                   </>
@@ -598,6 +671,9 @@ export function DashboardLayout() {
         onUnreadCountChange={
           setUnreadNotificationCount
         }
+        alerts={recentAlerts}
+        loading={alertsLoading}
+        error={alertsError}
       />
 
       <CommandPalette

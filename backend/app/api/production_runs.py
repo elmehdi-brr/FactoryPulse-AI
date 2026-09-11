@@ -21,7 +21,6 @@ from app.services.production_run_service import (
     get_production_runs,
     get_production_runs_by_line,
     update_production_run,
-    ProductionRunValidationError,
 )
 from app.services.oee_service import (
     OEEServiceError,

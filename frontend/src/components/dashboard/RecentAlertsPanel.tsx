@@ -10,6 +10,7 @@ import {
 import type {
   DashboardRecentAlert,
 } from '../../types/dashboard'
+import { formatRelativeTime } from '../../utils/time'
 
 type RecentAlertsPanelProps = {
   alerts: DashboardRecentAlert[]
@@ -44,48 +45,6 @@ function getSeverityClass(
   }
 
   return 'unknown'
-}
-
-function formatRelativeTime(
-  createdAt: string,
-): string {
-  const timestamp =
-    new Date(createdAt).getTime()
-
-  if (Number.isNaN(timestamp)) {
-    return 'Unknown time'
-  }
-
-  const elapsedMilliseconds =
-    Date.now() - timestamp
-
-  const elapsedMinutes =
-    Math.max(
-      0,
-      Math.floor(
-        elapsedMilliseconds / 60000,
-      ),
-    )
-
-  if (elapsedMinutes < 1) {
-    return 'Just now'
-  }
-
-  if (elapsedMinutes < 60) {
-    return `${elapsedMinutes} min ago`
-  }
-
-  const elapsedHours =
-    Math.floor(elapsedMinutes / 60)
-
-  if (elapsedHours < 24) {
-    return `${elapsedHours}h ago`
-  }
-
-  const elapsedDays =
-    Math.floor(elapsedHours / 24)
-
-  return `${elapsedDays}d ago`
 }
 
 export function RecentAlertsPanel({

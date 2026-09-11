@@ -11,8 +11,17 @@ import {
   AnimatePresence,
   motion,
 } from 'motion/react'
-import { useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { useNavigate } from 'react-router-dom'
+
+import type {
+  DashboardRecentAlert,
+} from '../../types/dashboard'
+import { formatRelativeTime } from '../../utils/time'
 
 type NotificationSeverity =
   | 'critical'
@@ -33,40 +42,30 @@ type NotificationCenterProps = {
   open: boolean
   onClose: () => void
   onUnreadCountChange: (count: number) => void
+  alerts: DashboardRecentAlert[]
+  loading?: boolean
+  error?: string | null
 }
 
-const initialNotifications: NotificationItem[] = [
-  {
-    id: 1,
-    severity: 'critical',
-    title: 'Critical machine alert',
-    message:
-      'Motor temperature exceeded the configured threshold.',
-    source: 'Press M-101',
-    time: '4 min ago',
-    read: false,
-  },
-  {
-    id: 2,
-    severity: 'high',
-    title: 'Abnormal vibration detected',
-    message:
-      'Vibration behavior is outside the expected operating pattern.',
-    source: 'Conveyor M-204',
-    time: '18 min ago',
-    read: false,
-  },
-  {
-    id: 3,
-    severity: 'info',
-    title: 'Maintenance completed',
-    message:
-      'Corrective maintenance record was completed and verified.',
-    source: 'Packaging Line B',
-    time: '1h ago',
-    read: false,
-  },
-]
+function toNotificationSeverity(
+  severity: string,
+): NotificationSeverity {
+  const normalized =
+    severity.trim().toLowerCase()
+
+  if (normalized === 'critical') {
+    return 'critical'
+  }
+
+  if (
+    normalized === 'high'
+    || normalized === 'medium'
+  ) {
+    return 'high'
+  }
+
+  return 'info'
+}
 
 function getSeverityIcon(
   severity: NotificationSeverity,
@@ -86,53 +85,56 @@ export function NotificationCenter({
   open,
   onClose,
   onUnreadCountChange,
+  alerts,
+  loading = false,
+  error = null,
 }: NotificationCenterProps) {
   const navigate = useNavigate()
 
-  const [notifications, setNotifications] =
-    useState(initialNotifications)
+  const [readIds, setReadIds] = useState<number[]>(
+    [],
+  )
+
+  const notifications: NotificationItem[] = useMemo(
+    () =>
+      alerts.map((alert) => ({
+        id: alert.id,
+        severity: toNotificationSeverity(
+          alert.severity,
+        ),
+        title: alert.title,
+        message: alert.message,
+        source: alert.machine_name,
+        time: formatRelativeTime(
+          alert.created_at,
+        ),
+        read: readIds.includes(alert.id),
+      })),
+    [alerts, readIds],
+  )
 
   const unreadCount = notifications.filter(
     (notification) => !notification.read,
   ).length
 
-  function updateNotifications(
-    nextNotifications: NotificationItem[],
-  ) {
-    setNotifications(nextNotifications)
-
-    onUnreadCountChange(
-      nextNotifications.filter(
-        (notification) => !notification.read,
-      ).length,
-    )
-  }
+  useEffect(() => {
+    onUnreadCountChange(unreadCount)
+  }, [onUnreadCountChange, unreadCount])
 
   function markAllRead() {
-    const nextNotifications = notifications.map(
-      (notification) => ({
-        ...notification,
-        read: true,
-      }),
+    setReadIds(
+      alerts.map((alert) => alert.id),
     )
-
-    updateNotifications(nextNotifications)
   }
 
   function markNotificationRead(
     notificationId: number,
   ) {
-    const nextNotifications = notifications.map(
-      (notification) =>
-        notification.id === notificationId
-          ? {
-              ...notification,
-              read: true,
-            }
-          : notification,
+    setReadIds((current) =>
+      current.includes(notificationId)
+        ? current
+        : [...current, notificationId],
     )
-
-    updateNotifications(nextNotifications)
   }
 
   function openNotification(
@@ -237,7 +239,32 @@ export function NotificationCenter({
             </div>
 
             <div className="notification-list">
-              {notifications.map(
+              {loading && (
+                <div className="dashboard-panel-state">
+                  Loading notifications...
+                </div>
+              )}
+
+              {!loading && error && (
+                <div
+                  className="dashboard-panel-state"
+                  role="alert"
+                >
+                  {error}
+                </div>
+              )}
+
+              {!loading
+                && !error
+                && notifications.length === 0 && (
+                  <div className="dashboard-panel-state">
+                    No open alerts.
+                  </div>
+                )}
+
+              {!loading
+                && !error
+                && notifications.map(
                 (notification, index) => {
                   const Icon = getSeverityIcon(
                     notification.severity,

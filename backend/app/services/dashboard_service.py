@@ -92,6 +92,18 @@ class DashboardNeedsAttentionMetrics:
     dominant_reason: str | None
     dominant_reason_percentage: float | None
 
+
+@dataclass(frozen=True, slots=True)
+class DashboardEfficiencyTrendPointMetrics:
+    start_at: datetime
+    end_at: datetime
+
+    run_count: int
+
+    oee: float
+    availability: float
+
+
 @dataclass(frozen=True, slots=True)
 class DashboardOverviewMetrics:
     start_at: datetime | None
@@ -119,16 +131,6 @@ class DashboardOverviewMetrics:
     efficiency_trend: list[
         DashboardEfficiencyTrendPointMetrics
     ]
-
-@dataclass(frozen=True, slots=True)
-class DashboardEfficiencyTrendPointMetrics:
-    start_at: datetime
-    end_at: datetime
-
-    run_count: int
-
-    oee: float
-    availability: float
 
 
 def validate_dashboard_period(

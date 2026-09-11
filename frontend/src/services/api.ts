@@ -16,8 +16,50 @@ if (!API_BASE_URL) {
   )
 }
 
+type ApiValidationIssue = {
+  loc?: (string | number)[]
+  msg?: string
+}
+
 type ApiErrorPayload = {
-  detail?: string
+  detail?: string | ApiValidationIssue[]
+}
+
+// FastAPI returns a plain string for raised HTTPExceptions, but a list of
+// issue objects for request-validation failures (422). Handle both so the
+// user sees the real reason instead of a bare status code.
+function readErrorDetail(
+  detail: ApiErrorPayload['detail'],
+): string | null {
+  if (typeof detail === 'string') {
+    return detail || null
+  }
+
+  if (!Array.isArray(detail)) {
+    return null
+  }
+
+  const messages = detail.flatMap(
+    (issue) => {
+      if (!issue?.msg) {
+        return []
+      }
+
+      const field = Array.isArray(issue.loc)
+        ? issue.loc[issue.loc.length - 1]
+        : undefined
+
+      return [
+        field === undefined
+          ? issue.msg
+          : `${field}: ${issue.msg}`,
+      ]
+    },
+  )
+
+  return messages.length > 0
+    ? messages.join('; ')
+    : null
 }
 
 export class ApiError extends Error {
@@ -88,11 +130,12 @@ export async function apiRequest<T>(
       const errorBody =
         (await response.json()) as ApiErrorPayload
 
-      if (
-        typeof errorBody.detail === 'string'
-        && errorBody.detail
-      ) {
-        message = errorBody.detail
+      const detail = readErrorDetail(
+        errorBody.detail,
+      )
+
+      if (detail) {
+        message = detail
       }
     } catch {
       // The backend response did not contain JSON.

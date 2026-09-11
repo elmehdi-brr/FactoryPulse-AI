@@ -22,6 +22,7 @@ import {
   getProductionRunOEE,
   getProductionLines,
 } from '../services/production'
+import type { ProductionPeriod } from '../services/production'
 import type {
   ProductionLine,
   ProductionLineDowntime,
@@ -30,6 +31,52 @@ import type {
   ProductionRun,
   ProductionRunOEE,
 } from '../types/production'
+
+// The trends endpoint compares a window against the window
+// immediately preceding it, so it always needs an explicit range.
+const TRENDS_PERIOD_DAYS = 7
+
+function buildTrendsPeriod(): ProductionPeriod {
+  const endAt = new Date()
+
+  const startAt = new Date(
+    endAt.getTime()
+    - TRENDS_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+  )
+
+  return {
+    startAt,
+    endAt,
+  }
+}
+
+// The analytics endpoints answer 422 when the selected period holds no
+// computable production data. That is an expected state for a new or idle
+// line, so it is reported as an empty state rather than a failure.
+type PanelFailure = {
+  kind: 'empty' | 'error'
+  message: string
+}
+
+function describeFailure(
+  requestError: unknown,
+  fallbackMessage: string,
+): PanelFailure {
+  if (requestError instanceof ApiError) {
+    return {
+      kind:
+        requestError.status === 422
+          ? 'empty'
+          : 'error',
+      message: requestError.message,
+    }
+  }
+
+  return {
+    kind: 'error',
+    message: fallbackMessage,
+  }
+}
 
 function formatPercentage(
   value: number,
@@ -193,7 +240,7 @@ export function ProductionPage() {
   const [
     trendsError,
     setTrendsError,
-  ] = useState<string | null>(null)
+  ] = useState<PanelFailure | null>(null)
 
   const [
     loadingOEE,
@@ -213,12 +260,12 @@ export function ProductionPage() {
   const [
     oeeError,
     setOEEError,
-  ] = useState<string | null>(null)
+  ] = useState<PanelFailure | null>(null)
 
   const [
     downtimeError,
     setDowntimeError,
-  ] = useState<string | null>(null)
+  ] = useState<PanelFailure | null>(null)
 
   const [
     selectedRunId,
@@ -240,7 +287,7 @@ export function ProductionPage() {
   const [
     runOEEError,
     setRunOEEError,
-  ] = useState<string | null>(null)
+  ] = useState<PanelFailure | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -304,15 +351,12 @@ export function ProductionPage() {
           return
         }
 
-        if (
-          requestError instanceof ApiError
-        ) {
-          setOEEError(requestError.message)
-        } else {
-          setOEEError(
+        setOEEError(
+          describeFailure(
+            requestError,
             'Unable to load line performance.',
-          )
-        }
+          ),
+        )
 
         setSelectedLineOEE(null)
       } finally {
@@ -356,17 +400,12 @@ export function ProductionPage() {
           return
         }
 
-        if (
-          requestError instanceof ApiError
-        ) {
-          setDowntimeError(
-            requestError.message,
-          )
-        } else {
-          setDowntimeError(
+        setDowntimeError(
+          describeFailure(
+            requestError,
             'Unable to load downtime analytics.',
-          )
-        }
+          ),
+        )
 
         setSelectedLineDowntime(null)
       } finally {
@@ -400,6 +439,7 @@ export function ProductionPage() {
         const response =
           await getProductionLineOperationalTrends(
             lineId,
+            buildTrendsPeriod(),
           )
 
         if (!cancelled) {
@@ -410,17 +450,12 @@ export function ProductionPage() {
           return
         }
 
-        if (
-          requestError instanceof ApiError
-        ) {
-          setTrendsError(
-            requestError.message,
-          )
-        } else {
-          setTrendsError(
+        setTrendsError(
+          describeFailure(
+            requestError,
             'Unable to load operational trends.',
-          )
-        }
+          ),
+        )
 
         setSelectedLineTrends(null)
       } finally {
@@ -523,17 +558,12 @@ export function ProductionPage() {
           return
         }
 
-        if (
-          requestError instanceof ApiError
-        ) {
-          setRunOEEError(
-            requestError.message,
-          )
-        } else {
-          setRunOEEError(
+        setRunOEEError(
+          describeFailure(
+            requestError,
             'Unable to load run performance.',
-          )
-        }
+          ),
+        )
 
         setSelectedRunOEE(null)
       } finally {
@@ -732,24 +762,32 @@ export function ProductionPage() {
               </div>
             )}
 
-            {!loadingOEE && oeeError && (
-              <div
-                className="dashboard-data-error"
-                role="alert"
-              >
-                <RefreshCw size={17} />
-
-                <div>
-                  <strong>
-                    Performance unavailable
-                  </strong>
-
-                  <span>
-                    {oeeError}
-                  </span>
+            {!loadingOEE
+              && oeeError?.kind === 'empty' && (
+                <div className="dashboard-panel-state">
+                  {oeeError.message}
                 </div>
-              </div>
-            )}
+              )}
+
+            {!loadingOEE
+              && oeeError?.kind === 'error' && (
+                <div
+                  className="dashboard-data-error"
+                  role="alert"
+                >
+                  <RefreshCw size={17} />
+
+                  <div>
+                    <strong>
+                      Performance unavailable
+                    </strong>
+
+                    <span>
+                      {oeeError.message}
+                    </span>
+                  </div>
+                </div>
+              )}
 
             {!loadingOEE
               && !oeeError
@@ -877,7 +915,14 @@ export function ProductionPage() {
             )}
 
             {!loadingDowntime
-              && downtimeError && (
+              && downtimeError?.kind === 'empty' && (
+                <div className="dashboard-panel-state">
+                  {downtimeError.message}
+                </div>
+              )}
+
+            {!loadingDowntime
+              && downtimeError?.kind === 'error' && (
                 <div
                   className="dashboard-data-error"
                   role="alert"
@@ -890,7 +935,7 @@ export function ProductionPage() {
                     </strong>
 
                     <span>
-                      {downtimeError}
+                      {downtimeError.message}
                     </span>
                   </div>
                 </div>
@@ -1083,24 +1128,39 @@ export function ProductionPage() {
               </div>
             )}
 
-            {!loadingTrends && trendsError && (
-              <div
-                className="dashboard-data-error"
-                role="alert"
-              >
-                <RefreshCw size={17} />
-
-                <div>
-                  <strong>
-                    Operational trends unavailable
-                  </strong>
-
-                  <span>
-                    {trendsError}
-                  </span>
+            {!loadingTrends
+              && trendsError?.kind === 'empty' && (
+                <div className="dashboard-panel-state">
+                  {trendsError.message}
+                  {' '}
+                  A trend needs completed runs in both
+                  the current and the preceding
+                  {' '}
+                  {TRENDS_PERIOD_DAYS}
+                  {' '}
+                  days.
                 </div>
-              </div>
-            )}
+              )}
+
+            {!loadingTrends
+              && trendsError?.kind === 'error' && (
+                <div
+                  className="dashboard-data-error"
+                  role="alert"
+                >
+                  <RefreshCw size={17} />
+
+                  <div>
+                    <strong>
+                      Operational trends unavailable
+                    </strong>
+
+                    <span>
+                      {trendsError.message}
+                    </span>
+                  </div>
+                </div>
+              )}
 
             {!loadingTrends
               && !trendsError
@@ -1607,7 +1667,16 @@ export function ProductionPage() {
                             )}
 
                             {!loadingRunOEE
-                              && runOEEError && (
+                              && runOEEError?.kind
+                                === 'empty' && (
+                                <div className="dashboard-panel-state">
+                                  {runOEEError.message}
+                                </div>
+                              )}
+
+                            {!loadingRunOEE
+                              && runOEEError?.kind
+                                === 'error' && (
                                 <div
                                   className="dashboard-data-error"
                                   role="alert"
@@ -1620,7 +1689,7 @@ export function ProductionPage() {
                                     </strong>
 
                                     <span>
-                                      {runOEEError}
+                                      {runOEEError.message}
                                     </span>
                                   </div>
                                 </div>
