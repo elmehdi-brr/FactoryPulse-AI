@@ -3226,6 +3226,10 @@ a {
   .notification-message {
     font-size: 10.5px;
   }
+
+  .production-trend-period-select {
+  width: 100%;
+}
 }
 
 
@@ -5187,6 +5191,24 @@ a {
   margin-top: 28px;
   padding-top: 28px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.production-trend-period-select {
+  min-width: 130px;
+  padding: 7px 10px;
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+
+  background: rgba(255, 255, 255, 0.025);
+
+  color: #cdd6db;
+  font-size: 12px;
+}
+
+.production-trend-period-select:focus {
+  outline: 2px solid rgba(59, 217, 135, 0.25);
+  outline-offset: 2px;
 }
 
 .production-trend-periods {

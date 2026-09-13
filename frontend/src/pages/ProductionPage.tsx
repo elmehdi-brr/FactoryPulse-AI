@@ -34,14 +34,23 @@ import type {
 
 // The trends endpoint compares a window against the window
 // immediately preceding it, so it always needs an explicit range.
-const TRENDS_PERIOD_DAYS = 7
+const TREND_PERIODS = {
+  '7': 7,
+  '30': 30,
+  '90': 90,
+} as const
 
-function buildTrendsPeriod(): ProductionPeriod {
+type TrendPeriodDays =
+  keyof typeof TREND_PERIODS
+
+function buildTrendsPeriod(
+  days: number,
+): ProductionPeriod {
   const endAt = new Date()
 
   const startAt = new Date(
     endAt.getTime()
-    - TRENDS_PERIOD_DAYS * 24 * 60 * 60 * 1000,
+    - days * 24 * 60 * 60 * 1000,
   )
 
   return {
@@ -193,6 +202,11 @@ export function ProductionPage() {
     selectedLineId,
     setSelectedLineId,
   ] = useState<number | null>(null)
+
+  const [
+  trendPeriodDays,
+  setTrendPeriodDays,
+  ] = useState<TrendPeriodDays>('7')
 
   const [
     selectedLineOEE,
@@ -439,8 +453,10 @@ export function ProductionPage() {
         const response =
           await getProductionLineOperationalTrends(
             lineId,
-            buildTrendsPeriod(),
-          )
+            buildTrendsPeriod(
+              TREND_PERIODS[trendPeriodDays],
+            ),
+          ) 
 
         if (!cancelled) {
           setSelectedLineTrends(response)
@@ -470,7 +486,7 @@ export function ProductionPage() {
     return () => {
       cancelled = true
     }
-  }, [selectedLineId])
+  }, [selectedLineId, trendPeriodDays])
 
   useEffect(() => {
     if (selectedLineId === null) {
@@ -1120,6 +1136,29 @@ export function ProductionPage() {
                   Operational trends
                 </h2>
               </div>
+
+              <select
+                className="production-trend-period-select"
+                value={trendPeriodDays}
+                onChange={(event) => {
+                  setTrendPeriodDays(
+                    event.target.value as TrendPeriodDays,
+                  )
+                }}
+                aria-label="Trend comparison period"
+              >
+                <option value="7">
+                  Last 7 days
+                </option>
+
+                <option value="30">
+                  Last 30 days
+                </option>
+
+                <option value="90">
+                  Last 90 days
+                </option>
+              </select>
             </div>
 
             {loadingTrends && (
@@ -1136,7 +1175,7 @@ export function ProductionPage() {
                   A trend needs completed runs in both
                   the current and the preceding
                   {' '}
-                  {TRENDS_PERIOD_DAYS}
+                  {trendPeriodDays}
                   {' '}
                   days.
                 </div>
