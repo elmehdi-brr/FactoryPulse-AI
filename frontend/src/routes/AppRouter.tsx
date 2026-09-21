@@ -12,6 +12,7 @@ import { PlaceholderPage } from '../pages/PlaceholderPage'
 import { ProtectedRoute } from './ProtectedRoute'
 import { LoginPage } from '../pages/LoginPage'
 import { ProductionPage } from '../pages/ProductionPage'
+import { MachinesPage } from '../pages/MachinesPage'
 
 export function AppRouter() {
   return (
@@ -70,13 +71,7 @@ export function AppRouter() {
 
               <Route
                 path="/machines"
-                element={
-                  <PlaceholderPage
-                    eyebrow="Asset Intelligence"
-                    title="Machines"
-                    description="Machine reliability, MTTR, MTBF, sensors, health, and operational impact will live here."
-                  />
-                }
+                element={<MachinesPage />}
               />
 
               <Route
