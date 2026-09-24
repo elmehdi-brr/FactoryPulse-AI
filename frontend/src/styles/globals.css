@@ -5959,3 +5959,119 @@ a {
     flex-direction: column;
   }
 }
+
+
+
+/* =========================================================
+   MACHINE RELIABILITY
+   ========================================================= */
+
+.machine-reliability {
+  margin-top: 22px;
+  padding-top: 18px;
+
+  border-top:
+    1px solid rgba(255, 255, 255, 0.055);
+}
+
+.machine-reliability-header {
+  display: flex;
+
+  align-items: flex-start;
+
+  justify-content: space-between;
+
+  gap: 16px;
+
+  margin-bottom: 14px;
+}
+
+.machine-reliability-header > div {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 5px;
+}
+
+.machine-reliability-header h3 {
+  color: #dce3e7;
+
+  font-size: 16px;
+
+  font-weight: 620;
+}
+
+.machine-reliability-header > svg {
+  flex-shrink: 0;
+
+  color: #829097;
+}
+
+.machine-reliability-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 10px;
+}
+
+.machine-reliability-card {
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 6px;
+
+  min-width: 0;
+
+  padding: 12px;
+
+  border:
+    1px solid rgba(255, 255, 255, 0.05);
+
+  border-radius: 9px;
+
+  background:
+    rgba(255, 255, 255, 0.012);
+}
+
+.machine-reliability-card-wide {
+  grid-column: span 2;
+}
+
+.machine-reliability-card span {
+  color: #748087;
+
+  font-size: 11px;
+}
+
+.machine-reliability-card strong {
+  color: #d6dee2;
+
+  font-size: 15px;
+
+  font-weight: 630;
+}
+
+@media (max-width: 1100px) {
+  .machine-reliability-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .machine-reliability-card-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 560px) {
+  .machine-reliability-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .machine-reliability-card-wide {
+    grid-column: span 1;
+  }
+}

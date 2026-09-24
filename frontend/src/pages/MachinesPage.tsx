@@ -13,10 +13,19 @@ import {
 } from 'react'
 
 import { ApiError } from '../services/api'
-import { getMachines } from '../services/machines'
+import {
+  getMachineReliability,
+  getMachines,
+} from '../services/machines'
 import type {
   Machine,
+  MachineReliability,
 } from '../types/machine'
+
+type PanelFailure = {
+  kind: 'empty' | 'error'
+  message: string
+}
 
 function formatStatus(
   status: string,
@@ -46,6 +55,55 @@ function formatCreatedAt(
   return date.toLocaleDateString()
 }
 
+function formatHours(
+  seconds: number | null,
+): string {
+  if (seconds === null) {
+    return '—'
+  }
+
+  return `${(seconds / 3600).toFixed(1)}h`
+}
+
+function formatDuration(
+  seconds: number | null,
+): string {
+  if (seconds === null) {
+    return '—'
+  }
+
+  if (seconds < 60) {
+    return `${Math.round(seconds)}s`
+  }
+
+  if (seconds < 3600) {
+    return `${(seconds / 60).toFixed(1)}m`
+  }
+
+  return `${(seconds / 3600).toFixed(1)}h`
+}
+
+function describeReliabilityFailure(
+  requestError: unknown,
+): PanelFailure {
+  if (requestError instanceof ApiError) {
+    return {
+      kind:
+        requestError.status === 422
+          ? 'empty'
+          : 'error',
+      message:
+        requestError.message,
+    }
+  }
+
+  return {
+    kind: 'error',
+    message:
+      'Unable to load machine reliability.',
+  }
+}
+
 export function MachinesPage() {
   const [
     machines,
@@ -56,6 +114,25 @@ export function MachinesPage() {
     selectedMachineId,
     setSelectedMachineId,
   ] = useState<number | null>(null)
+
+  const [
+    selectedMachineReliability,
+    setSelectedMachineReliability,
+  ] = useState<MachineReliability | null>(
+    null,
+  )
+
+  const [
+    loadingReliability,
+    setLoadingReliability,
+  ] = useState(false)
+
+  const [
+    reliabilityError,
+    setReliabilityError,
+  ] = useState<PanelFailure | null>(
+    null,
+  )
 
   const [
     error,
@@ -102,6 +179,62 @@ export function MachinesPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    if (selectedMachineId === null) {
+      return
+    }
+
+    const machineId =
+      selectedMachineId
+
+    let cancelled = false
+
+    async function loadMachineReliability() {
+      setLoadingReliability(true)
+      setReliabilityError(null)
+      setSelectedMachineReliability(
+        null,
+      )
+
+      try {
+        const response =
+          await getMachineReliability(
+            machineId,
+          )
+
+        if (!cancelled) {
+          setSelectedMachineReliability(
+            response,
+          )
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        setReliabilityError(
+          describeReliabilityFailure(
+            requestError,
+          ),
+        )
+
+        setSelectedMachineReliability(
+          null,
+        )
+      } finally {
+        if (!cancelled) {
+          setLoadingReliability(false)
+        }
+      }
+    }
+
+    void loadMachineReliability()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMachineId])
 
   const selectedMachine =
     machines?.find(
@@ -358,6 +491,127 @@ export function MachinesPage() {
                       </span>
                     </div>
                   )}
+
+                  <div className="machine-reliability">
+                    <div className="machine-reliability-header">
+                      <div>
+                        <span className="panel-eyebrow">
+                          Reliability
+                        </span>
+
+                        <h3>
+                          Machine performance
+                        </h3>
+                      </div>
+
+                      <Activity size={18} />
+                    </div>
+
+                    {loadingReliability && (
+                      <div className="dashboard-panel-state">
+                        Loading reliability...
+                      </div>
+                    )}
+
+                    {!loadingReliability
+                      && reliabilityError
+                        ?.kind === 'empty' && (
+                        <div className="dashboard-panel-state">
+                          {reliabilityError.message}
+                        </div>
+                    )}
+
+                    {!loadingReliability
+                      && reliabilityError
+                        ?.kind === 'error' && (
+                        <div
+                          className="dashboard-data-error"
+                          role="alert"
+                        >
+                          <RefreshCw size={16} />
+
+                          <div>
+                            <strong>
+                              Reliability unavailable
+                            </strong>
+
+                            <span>
+                              {reliabilityError.message}
+                            </span>
+                          </div>
+                        </div>
+                    )}
+
+                    {!loadingReliability
+                      && !reliabilityError
+                      && selectedMachineReliability
+                      && (
+                        <div className="machine-reliability-grid">
+                          <div className="machine-reliability-card">
+                            <span>
+                              Failures
+                            </span>
+
+                            <strong>
+                              {selectedMachineReliability
+                                .failure_count}
+                            </strong>
+                          </div>
+
+                          <div className="machine-reliability-card">
+                            <span>
+                              Failure downtime
+                            </span>
+
+                            <strong>
+                              {formatHours(
+                                selectedMachineReliability
+                                  .total_failure_downtime_seconds,
+                              )}
+                            </strong>
+                          </div>
+
+                          <div className="machine-reliability-card">
+                            <span>
+                              MTTR
+                            </span>
+
+                            <strong>
+                              {formatDuration(
+                                selectedMachineReliability
+                                  .mttr_seconds,
+                              )}
+                            </strong>
+                          </div>
+
+                          <div className="machine-reliability-card">
+                            <span>
+                              MTBF
+                            </span>
+
+                            <strong>
+                              {formatDuration(
+                                selectedMachineReliability
+                                  .mtbf_seconds,
+                              )}
+                            </strong>
+                          </div>
+
+                          <div className="machine-reliability-card machine-reliability-card-wide">
+                            <span>
+                              Operating exposure
+                            </span>
+
+                            <strong>
+                              {formatHours(
+                                selectedMachineReliability
+                                  .operating_exposure_seconds,
+                              )}
+                            </strong>
+                          </div>
+                        </div>
+                    )}
+                  </div>
                 </motion.section>
               ) : (
                 <div className="machine-details machine-details-empty">
@@ -371,7 +625,8 @@ export function MachinesPage() {
                     <span>
                       Choose an asset from the
                       inventory to inspect its
-                      factory context.
+                      factory context and
+                      reliability.
                     </span>
                   </div>
                 </div>
