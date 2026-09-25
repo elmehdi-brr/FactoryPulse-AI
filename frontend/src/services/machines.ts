@@ -1,6 +1,7 @@
 import { apiRequest } from './api'
 import type {
   Machine,
+  MachineOperationalIntelligence,
   MachineReliability,
 } from '../types/machine'
 
@@ -38,6 +39,37 @@ export async function getMachineReliability(
 
   return apiRequest<MachineReliability>(
     `/machines/${machineId}/reliability${
+      query ? `?${query}` : ''
+    }`,
+  )
+}
+
+export async function getMachineOperationalIntelligence(
+  machineId: number,
+  startAt?: Date,
+  endAt?: Date,
+): Promise<MachineOperationalIntelligence> {
+  const searchParams = new URLSearchParams()
+
+  if (startAt) {
+    searchParams.set(
+      'start_at',
+      startAt.toISOString(),
+    )
+  }
+
+  if (endAt) {
+    searchParams.set(
+      'end_at',
+      endAt.toISOString(),
+    )
+  }
+
+  const query =
+    searchParams.toString()
+
+  return apiRequest<MachineOperationalIntelligence>(
+    `/machines/${machineId}/operational-intelligence${
       query ? `?${query}` : ''
     }`,
   )

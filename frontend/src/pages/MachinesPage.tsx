@@ -1,8 +1,11 @@
 import {
   Activity,
+  BellRing,
   Cpu,
   MapPin,
   RefreshCw,
+  ShieldAlert,
+  TriangleAlert,
 } from 'lucide-react'
 import {
   motion,
@@ -14,11 +17,13 @@ import {
 
 import { ApiError } from '../services/api'
 import {
+  getMachineOperationalIntelligence,
   getMachineReliability,
   getMachines,
 } from '../services/machines'
 import type {
   Machine,
+  MachineOperationalIntelligence,
   MachineReliability,
 } from '../types/machine'
 
@@ -104,6 +109,43 @@ function describeReliabilityFailure(
   }
 }
 
+function describeOperationalIntelligenceFailure(
+  requestError: unknown,
+): PanelFailure {
+  if (requestError instanceof ApiError) {
+    return {
+      kind:
+        requestError.status === 422
+          ? 'empty'
+          : 'error',
+      message:
+        requestError.message,
+    }
+  }
+
+  return {
+    kind: 'error',
+    message:
+      'Unable to load machine operational intelligence.',
+  }
+}
+
+function formatHealthStatus(
+  status: MachineOperationalIntelligence[
+    'health_status'
+  ],
+): string {
+  if (status === 'critical') {
+    return 'Critical'
+  }
+
+  if (status === 'attention') {
+    return 'Needs attention'
+  }
+
+  return 'Healthy'
+}
+
 export function MachinesPage() {
   const [
     machines,
@@ -121,6 +163,23 @@ export function MachinesPage() {
   ] = useState<MachineReliability | null>(
     null,
   )
+
+  const [
+    selectedMachineOperationalIntelligence,
+    setSelectedMachineOperationalIntelligence,
+  ] = useState<MachineOperationalIntelligence | null>(
+    null,
+  )
+
+  const [
+    loadingOperationalIntelligence,
+    setLoadingOperationalIntelligence,
+  ] = useState(false)
+
+  const [
+    operationalIntelligenceError,
+    setOperationalIntelligenceError,
+  ] = useState<PanelFailure | null>(null)
 
   const [
     loadingReliability,
@@ -230,6 +289,62 @@ export function MachinesPage() {
     }
 
     void loadMachineReliability()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMachineId])
+
+  useEffect(() => {
+    if (selectedMachineId === null) {
+      return
+    }
+
+    const machineId =
+      selectedMachineId
+
+    let cancelled = false
+
+    async function loadMachineOperationalIntelligence() {
+      setLoadingOperationalIntelligence(true)
+      setOperationalIntelligenceError(null)
+      setSelectedMachineOperationalIntelligence(
+        null,
+      )
+
+      try {
+        const response =
+          await getMachineOperationalIntelligence(
+            machineId,
+          )
+
+        if (!cancelled) {
+          setSelectedMachineOperationalIntelligence(
+            response,
+          )
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        setOperationalIntelligenceError(
+          describeOperationalIntelligenceFailure(
+            requestError,
+          ),
+        )
+
+        setSelectedMachineOperationalIntelligence(
+          null,
+        )
+      } finally {
+        if (!cancelled) {
+          setLoadingOperationalIntelligence(false)
+        }
+      }
+    }
+
+    void loadMachineOperationalIntelligence()
 
     return () => {
       cancelled = true
@@ -491,6 +606,222 @@ export function MachinesPage() {
                       </span>
                     </div>
                   )}
+                  <div className="machine-operational-intelligence">
+                    <div className="machine-operational-intelligence-header">
+                      <div>
+                        <span className="panel-eyebrow">
+                          Operational intelligence
+                        </span>
+
+                        <h3>
+                          Health &amp; operational impact
+                        </h3>
+                      </div>
+
+                      <ShieldAlert size={18} />
+                    </div>
+
+                    {loadingOperationalIntelligence && (
+                      <div className="dashboard-panel-state">
+                        Loading operational intelligence...
+                      </div>
+                    )}
+
+                    {!loadingOperationalIntelligence
+                      && operationalIntelligenceError
+                        ?.kind === 'empty' && (
+                        <div className="dashboard-panel-state">
+                          {
+                            operationalIntelligenceError.message
+                          }
+                        </div>
+                      )}
+
+                    {!loadingOperationalIntelligence
+                      && operationalIntelligenceError
+                        ?.kind === 'error' && (
+                        <div
+                          className="dashboard-data-error"
+                          role="alert"
+                        >
+                          <RefreshCw size={16} />
+
+                          <div>
+                            <strong>
+                              Operational data unavailable
+                            </strong>
+
+                            <span>
+                              {
+                                operationalIntelligenceError.message
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {!loadingOperationalIntelligence
+                      && !operationalIntelligenceError
+                      && selectedMachineOperationalIntelligence
+                      && (
+                        <>
+                          <div className="machine-health-summary">
+                            <div
+                              className={`machine-health-status machine-health-status-${selectedMachineOperationalIntelligence.health_status}`}
+                            >
+                              {selectedMachineOperationalIntelligence.health_status ===
+                                'critical' ? (
+                                <ShieldAlert size={20} />
+                              ) : selectedMachineOperationalIntelligence.health_status ===
+                                'attention' ? (
+                                <TriangleAlert size={20} />
+                              ) : (
+                                <Activity size={20} />
+                              )}
+
+                              <div>
+                                <span>
+                                  Current health
+                                </span>
+
+                                <strong>
+                                  {formatHealthStatus(
+                                    selectedMachineOperationalIntelligence.health_status,
+                                  )}
+                                </strong>
+                              </div>
+                            </div>
+
+                            <div className="machine-health-alerts">
+                              <div>
+                                <BellRing size={16} />
+
+                                <span>
+                                  Open alerts
+                                </span>
+
+                                <strong>
+                                  {
+                                    selectedMachineOperationalIntelligence.open_alert_count
+                                  }
+                                </strong>
+                              </div>
+
+                              <div>
+                                <ShieldAlert size={16} />
+
+                                <span>
+                                  Critical
+                                </span>
+
+                                <strong>
+                                  {
+                                    selectedMachineOperationalIntelligence.critical_alert_count
+                                  }
+                                </strong>
+                              </div>
+
+                              <div>
+                                <TriangleAlert size={16} />
+
+                                <span>
+                                  Attention
+                                </span>
+
+                                <strong>
+                                  {
+                                    selectedMachineOperationalIntelligence.attention_alert_count
+                                  }
+                                </strong>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="machine-impact-grid">
+                            <div className="machine-impact-card">
+                              <span>
+                                Downtime
+                              </span>
+
+                              <strong>
+                                {formatHours(
+                                  selectedMachineOperationalIntelligence
+                                    .operational_impact
+                                    ?.recorded_downtime_seconds
+                                    ?? 0,
+                                )}
+                              </strong>
+
+                              <small>
+                                Recorded machine downtime
+                              </small>
+                            </div>
+
+                            <div className="machine-impact-card">
+                              <span>
+                                Downtime share
+                              </span>
+
+                              <strong>
+                                {selectedMachineOperationalIntelligence
+                                  .operational_impact
+                                  ?.recorded_downtime_share ===
+                                  null
+                                  || selectedMachineOperationalIntelligence
+                                      .operational_impact ===
+                                    null
+                                  || selectedMachineOperationalIntelligence
+                                      .operational_impact ===
+                                    undefined
+                                  ? '—'
+                                  : `${(
+                                      selectedMachineOperationalIntelligence
+                                        .operational_impact
+                                        .recorded_downtime_share * 100
+                                    ).toFixed(1)}%`}
+                              </strong>
+
+                              <small>
+                                Share of line downtime
+                              </small>
+                            </div>
+
+                            <div className="machine-impact-card">
+                              <span>
+                                Operational priority
+                              </span>
+
+                              <strong>
+                                {selectedMachineOperationalIntelligence
+                                  .operational_priority
+                                  ?.priority_rank
+                                  ?? '—'}
+                              </strong>
+
+                              <small>
+                                Position within production line
+                              </small>
+                            </div>
+
+                            <div className="machine-impact-card">
+                              <span>
+                                Failure events
+                              </span>
+
+                              <strong>
+                                {
+                                  selectedMachineOperationalIntelligence.failure_count
+                                }
+                              </strong>
+
+                              <small>
+                                Recorded reliability failures
+                              </small>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                  </div>
 
                   <div className="machine-reliability">
                     <div className="machine-reliability-header">
