@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Literal, Sequence
 
 from app.production.downtime_analytics import (
     DowntimeAnalyticsMetrics,
@@ -9,6 +9,27 @@ from app.production.downtime_analytics import (
 class OperationalIntelligenceError(ValueError):
     pass
 
+MachineHealthStatus = Literal[
+    "healthy",
+    "attention",
+    "critical",
+]
+
+
+def calculate_machine_health_status(
+    alert_severities: Sequence[str],
+) -> MachineHealthStatus:
+    health: MachineHealthStatus = "healthy"
+
+    for severity in alert_severities:
+        normalized_severity = severity.strip().lower()
+
+        if normalized_severity == "critical":
+            return "critical"
+
+        health = "attention"
+
+    return health
 
 @dataclass(frozen=True, slots=True)
 class MachineReliabilitySnapshot:

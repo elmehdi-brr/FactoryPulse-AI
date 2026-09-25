@@ -21,6 +21,15 @@ from app.services.machine_reliability_service import (
     calculate_machine_reliability,
 )
 from app.services.production_line_service import get_production_line_by_id
+from app.schemas.machine_operational_intelligence import (
+    MachineOperationalIntelligenceResponse,
+    MachineOperationalImpactResponse,
+    MachineOperationalPriorityResponse,
+)
+from app.services.machine_operational_intelligence_service import (
+    MachineOperationalIntelligenceServiceError,
+    calculate_machine_operational_intelligence,
+)
 
 
 router = APIRouter(
@@ -172,6 +181,106 @@ async def get_machine_reliability_endpoint(
         mtbf_seconds=metrics.mtbf_seconds,
     )
 
+@router.get(
+    "/{machine_id}/operational-intelligence",
+    response_model=MachineOperationalIntelligenceResponse,
+)
+async def get_machine_operational_intelligence_endpoint(
+    machine_id: int,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*ALL_ROLES)),
+) -> MachineOperationalIntelligenceResponse:
+    try:
+        result = await calculate_machine_operational_intelligence(
+            db,
+            machine_id,
+            start_at=start_at,
+            end_at=end_at,
+        )
+    except MachineOperationalIntelligenceServiceError as exc:
+        if str(exc) == "Machine not found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    operational_impact = None
+
+    if result.operational_impact is not None:
+        operational_impact = (
+            MachineOperationalImpactResponse(
+                recorded_downtime_event_count=(
+                    result.operational_impact
+                    .recorded_downtime_event_count
+                ),
+                recorded_downtime_seconds=(
+                    result.operational_impact
+                    .recorded_downtime_seconds
+                ),
+                recorded_downtime_share=(
+                    result.operational_impact
+                    .recorded_downtime_share
+                ),
+            )
+        )
+
+    operational_priority = None
+
+    if result.operational_priority is not None:
+        operational_priority = (
+            MachineOperationalPriorityResponse(
+                priority_rank=(
+                    result.operational_priority.priority_rank
+                ),
+                downtime_rank=(
+                    result.operational_priority.downtime_rank
+                ),
+                failure_rank=(
+                    result.operational_priority.failure_rank
+                ),
+                mttr_rank=(
+                    result.operational_priority.mttr_rank
+                ),
+                mtbf_rank=(
+                    result.operational_priority.mtbf_rank
+                ),
+            )
+        )
+
+    return MachineOperationalIntelligenceResponse(
+        machine_id=result.machine_id,
+        start_at=result.start_at,
+        end_at=result.end_at,
+        health_status=result.health_status,
+        open_alert_count=(
+            result.alerts.open_alert_count
+        ),
+        critical_alert_count=(
+            result.alerts.critical_alert_count
+        ),
+        attention_alert_count=(
+            result.alerts.attention_alert_count
+        ),
+        production_line_id=result.production_line_id,
+        failure_count=result.failure_count,
+        total_failure_downtime_seconds=(
+            result.total_failure_downtime_seconds
+        ),
+        mttr_seconds=result.mttr_seconds,
+        operating_exposure_seconds=(
+            result.operating_exposure_seconds
+        ),
+        mtbf_seconds=result.mtbf_seconds,
+        operational_impact=operational_impact,
+        operational_priority=operational_priority,
+    )
 
 @router.patch(
     "/{machine_id}",

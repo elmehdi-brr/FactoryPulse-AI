@@ -488,3 +488,67 @@ def test_operational_priority_rejects_incomplete_failed_machine_metrics() -> Non
                 )
             ]
         )
+
+
+
+def test_machine_health_is_healthy_without_open_alerts() -> None:
+    from app.production.operational_intelligence import (
+        calculate_machine_health_status,
+    )
+
+    assert (
+        calculate_machine_health_status([])
+        == "healthy"
+    )
+
+
+def test_machine_health_is_attention_with_non_critical_alert() -> None:
+    from app.production.operational_intelligence import (
+        calculate_machine_health_status,
+    )
+
+    assert (
+        calculate_machine_health_status(
+            ["medium"]
+        )
+        == "attention"
+    )
+
+
+def test_machine_health_is_critical_with_critical_alert() -> None:
+    from app.production.operational_intelligence import (
+        calculate_machine_health_status,
+    )
+
+    assert (
+        calculate_machine_health_status(
+            ["medium", "critical"]
+        )
+        == "critical"
+    )
+
+
+def test_machine_health_is_critical_regardless_of_alert_order() -> None:
+    from app.production.operational_intelligence import (
+        calculate_machine_health_status,
+    )
+
+    assert (
+        calculate_machine_health_status(
+            ["critical", "high", "low"]
+        )
+        == "critical"
+    )
+
+
+def test_machine_health_normalizes_alert_severity() -> None:
+    from app.production.operational_intelligence import (
+        calculate_machine_health_status,
+    )
+
+    assert (
+        calculate_machine_health_status(
+            ["  CRITICAL  "]
+        )
+        == "critical"
+    )
