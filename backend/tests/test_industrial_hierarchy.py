@@ -368,3 +368,167 @@ async def test_machine_partial_patch_cannot_break_hierarchy(
         machine_after["production_line_id"]
         == hierarchy["production_line_id"]
     )
+
+
+
+async def test_machine_sensor_navigation(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_base_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": hierarchy["production_line_id"],
+            "name": "Sensor Test Motor",
+            "code": "SENSOR-MOTOR",
+            "location": "Production Line 1",
+            "status": "active",
+        },
+    )
+
+    assert machine_response.status_code == 201
+    machine = machine_response.json()
+
+    second_machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": hierarchy["production_line_id"],
+            "name": "Second Sensor Motor",
+            "code": "SENSOR-MOTOR-2",
+            "location": "Production Line 1",
+            "status": "active",
+        },
+    )
+
+    assert second_machine_response.status_code == 201
+    second_machine = second_machine_response.json()
+
+    first_sensor_response = await client.post(
+        "/sensors",
+        headers=auth_headers["admin"],
+        json={
+            "machine_id": machine["id"],
+            "name": "Motor Temperature",
+            "sensor_type": "temperature",
+            "unit": "°C",
+            "status": "active",
+        },
+    )
+
+    assert first_sensor_response.status_code == 201
+
+    second_sensor_response = await client.post(
+        "/sensors",
+        headers=auth_headers["admin"],
+        json={
+            "machine_id": machine["id"],
+            "name": "Motor Vibration",
+            "sensor_type": "vibration",
+            "unit": "mm/s",
+            "status": "active",
+        },
+    )
+
+    assert second_sensor_response.status_code == 201
+
+    unrelated_sensor_response = await client.post(
+        "/sensors",
+        headers=auth_headers["admin"],
+        json={
+            "machine_id": second_machine["id"],
+            "name": "Other Motor Temperature",
+            "sensor_type": "temperature",
+            "unit": "°C",
+            "status": "active",
+        },
+    )
+
+    assert unrelated_sensor_response.status_code == 201
+
+    response = await client.get(
+        f"/machines/{machine['id']}/sensors",
+        headers=auth_headers["operator"],
+    )
+
+    assert response.status_code == 200
+
+    sensors = response.json()
+
+    assert len(sensors) == 2
+
+    assert [
+        sensor["id"]
+        for sensor in sensors
+    ] == sorted(
+        sensor["id"]
+        for sensor in sensors
+    )
+
+    assert all(
+        sensor["machine_id"] == machine["id"]
+        for sensor in sensors
+    )
+
+    assert {
+        sensor["name"]
+        for sensor in sensors
+    } == {
+        "Motor Temperature",
+        "Motor Vibration",
+    }
+
+
+async def test_machine_sensor_navigation_returns_empty_for_machine_without_sensors(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_base_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": hierarchy["production_line_id"],
+            "name": "No Sensor Motor",
+            "code": "NO-SENSOR-MOTOR",
+            "location": "Production Line 1",
+            "status": "active",
+        },
+    )
+
+    assert machine_response.status_code == 201
+    machine = machine_response.json()
+
+    response = await client.get(
+        f"/machines/{machine['id']}/sensors",
+        headers=auth_headers["operator"],
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_machine_sensor_navigation_rejects_unknown_machine(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/machines/999999/sensors",
+        headers=auth_headers["operator"],
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Machine not found"

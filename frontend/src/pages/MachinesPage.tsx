@@ -19,12 +19,14 @@ import { ApiError } from '../services/api'
 import {
   getMachineOperationalIntelligence,
   getMachineReliability,
+  getMachineSensors,
   getMachines,
 } from '../services/machines'
 import type {
   Machine,
   MachineOperationalIntelligence,
   MachineReliability,
+  MachineSensor,
 } from '../types/machine'
 
 type PanelFailure = {
@@ -146,7 +148,7 @@ function formatHealthStatus(
   return 'Healthy'
 }
 
-export function MachinesPage() {
+  export function MachinesPage() {
   const [
     machines,
     setMachines,
@@ -192,6 +194,21 @@ export function MachinesPage() {
   ] = useState<PanelFailure | null>(
     null,
   )
+
+  const [
+    selectedMachineSensors,
+    setSelectedMachineSensors,
+  ] = useState<MachineSensor[] | null>(null)
+
+  const [
+    loadingSensors,
+    setLoadingSensors,
+  ] = useState(false)
+
+  const [
+    sensorError,
+    setSensorError,
+  ] = useState<string | null>(null)
 
   const [
     error,
@@ -345,6 +362,54 @@ export function MachinesPage() {
     }
 
     void loadMachineOperationalIntelligence()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMachineId])
+
+  useEffect(() => {
+    if (selectedMachineId === null) {
+      return
+    }
+
+    const machineId =
+      selectedMachineId
+
+    let cancelled = false
+
+    async function loadMachineSensors() {
+      setLoadingSensors(true)
+      setSensorError(null)
+      setSelectedMachineSensors(null)
+
+      try {
+        const response =
+          await getMachineSensors(machineId)
+
+        if (!cancelled) {
+          setSelectedMachineSensors(response)
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        setSensorError(
+          requestError instanceof ApiError
+            ? requestError.message
+            : 'Unable to load machine sensors.',
+        )
+
+        setSelectedMachineSensors(null)
+      } finally {
+        if (!cancelled) {
+          setLoadingSensors(false)
+        }
+      }
+    }
+
+    void loadMachineSensors()
 
     return () => {
       cancelled = true
@@ -820,6 +885,128 @@ export function MachinesPage() {
                             </div>
                           </div>
                         </>
+                      )}
+                  </div>
+                  
+                  <div className="machine-sensors">
+                    <div className="machine-sensors-header">
+                      <div>
+                        <span className="panel-eyebrow">
+                          Telemetry
+                        </span>
+
+                        <h3>
+                          Connected sensors
+                        </h3>
+                      </div>
+
+                      <span className="machine-sensor-count">
+                        {selectedMachineSensors?.length ?? 0}
+                      </span>
+                    </div>
+
+                    {loadingSensors && (
+                      <div className="dashboard-panel-state">
+                        Loading sensors...
+                      </div>
+                    )}
+
+                    {!loadingSensors && sensorError && (
+                      <div
+                        className="dashboard-data-error"
+                        role="alert"
+                      >
+                        <RefreshCw size={16} />
+
+                        <div>
+                          <strong>
+                            Sensor data unavailable
+                          </strong>
+
+                          <span>
+                            {sensorError}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {!loadingSensors
+                      && !sensorError
+                      && selectedMachineSensors
+                      && selectedMachineSensors.length === 0 && (
+                        <div className="machine-sensors-empty">
+                          <Cpu size={18} />
+
+                          <div>
+                            <strong>
+                              No sensors connected
+                            </strong>
+
+                            <span>
+                              This machine does not have
+                              any telemetry sensors registered.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {!loadingSensors
+                      && !sensorError
+                      && selectedMachineSensors
+                      && selectedMachineSensors.length > 0 && (
+                        <div className="machine-sensor-list">
+                          {selectedMachineSensors.map(
+                            (sensor, index) => (
+                              <motion.div
+                                key={sensor.id}
+                                className="machine-sensor-item"
+                                initial={{
+                                  opacity: 0,
+                                  y: 8,
+                                }}
+                                animate={{
+                                  opacity: 1,
+                                  y: 0,
+                                }}
+                                transition={{
+                                  delay: index * 0.04,
+                                }}
+                              >
+                                <div className="machine-sensor-icon">
+                                  <Activity size={17} />
+                                </div>
+
+                                <div className="machine-sensor-main">
+                                  <strong>
+                                    {sensor.name}
+                                  </strong>
+
+                                  <span>
+                                    {sensor.sensor_type}
+                                  </span>
+                                </div>
+
+                                <div className="machine-sensor-unit">
+                                  <span>
+                                    Unit
+                                  </span>
+
+                                  <strong>
+                                    {sensor.unit}
+                                  </strong>
+                                </div>
+
+                                <span
+                                  className={`machine-sensor-status machine-sensor-status-${sensor.status.trim().toLowerCase()}`}
+                                >
+                                  {formatStatus(
+                                    sensor.status,
+                                  )}
+                                </span>
+                              </motion.div>
+                            ),
+                          )}
+                        </div>
                       )}
                   </div>
 

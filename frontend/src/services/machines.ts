@@ -3,6 +3,7 @@ import type {
   Machine,
   MachineOperationalIntelligence,
   MachineReliability,
+  MachineSensor,
 } from '../types/machine'
 
 export async function getMachines(): Promise<
@@ -72,5 +73,13 @@ export async function getMachineOperationalIntelligence(
     `/machines/${machineId}/operational-intelligence${
       query ? `?${query}` : ''
     }`,
+  )
+}
+
+export async function getMachineSensors(
+  machineId: number,
+): Promise<MachineSensor[]> {
+  return apiRequest<MachineSensor[]>(
+    `/machines/${machineId}/sensors`,
   )
 }

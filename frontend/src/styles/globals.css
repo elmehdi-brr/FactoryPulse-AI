@@ -6234,3 +6234,140 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   MACHINE SENSORS
+   ========================================================= */
+
+.machine-sensors {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--viz-border);
+}
+
+.machine-sensors-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.machine-sensors-header h3 {
+  margin: 0.25rem 0 0;
+}
+
+.machine-sensor-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 999px;
+  background: var(--viz-chip-card);
+  font-weight: 600;
+}
+
+.machine-sensor-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.machine-sensor-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 14px;
+  background: var(--viz-card);
+}
+
+.machine-sensor-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--viz-accent-bg);
+  color: var(--viz-accent);
+}
+
+.machine-sensor-main {
+  min-width: 0;
+}
+
+.machine-sensor-main strong {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.machine-sensor-main span {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--viz-muted);
+  font-size: 0.76rem;
+}
+
+.machine-sensor-unit {
+  text-align: right;
+}
+
+.machine-sensor-unit span {
+  display: block;
+  color: var(--viz-muted);
+  font-size: 0.7rem;
+}
+
+.machine-sensor-unit strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.84rem;
+}
+
+.machine-sensor-status {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.machine-sensor-status-active {
+  background: var(--viz-accent-bg);
+}
+
+.machine-sensors-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px dashed var(--viz-border);
+  border-radius: 14px;
+  color: var(--viz-muted);
+}
+
+.machine-sensors-empty strong {
+  display: block;
+  color: var(--viz-text);
+  font-size: 0.88rem;
+}
+
+.machine-sensors-empty span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 560px) {
+  .machine-sensor-item {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .machine-sensor-unit {
+    display: none;
+  }
+}

@@ -38,6 +38,21 @@ async def get_sensors(
 
     return list(result.scalars().all())
 
+async def get_sensors_by_machine(
+    db: AsyncSession,
+    machine_id: int,
+) -> list[Sensor]:
+    result = await db.execute(
+        select(Sensor)
+        .where(
+            Sensor.machine_id == machine_id
+        )
+        .order_by(
+            Sensor.id
+        )
+    )
+
+    return list(result.scalars().all())
 
 async def update_sensor(
     db: AsyncSession,

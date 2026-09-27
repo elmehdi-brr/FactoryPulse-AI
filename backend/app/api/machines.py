@@ -2,6 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
+from app.schemas.sensor import SensorResponse
+from app.services.sensor_service import (
+    get_sensors_by_machine,
+)
 from app.api.dependencies import require_roles
 from app.core.rbac import ALL_ROLES, ASSET_WRITE_ROLES, MANAGEMENT_ROLES
 from app.db.session import get_db
@@ -179,6 +183,33 @@ async def get_machine_reliability_endpoint(
             metrics.operating_exposure_seconds
         ),
         mtbf_seconds=metrics.mtbf_seconds,
+    )
+
+@router.get(
+    "/{machine_id}/sensors",
+    response_model=list[SensorResponse],
+)
+async def get_machine_sensors_endpoint(
+    machine_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> list[SensorResponse]:
+    machine = await get_machine_by_id(
+        db,
+        machine_id,
+    )
+
+    if machine is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Machine not found",
+        )
+
+    return await get_sensors_by_machine(
+        db,
+        machine_id,
     )
 
 @router.get(

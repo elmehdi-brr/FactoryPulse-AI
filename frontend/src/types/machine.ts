@@ -76,3 +76,14 @@ export type MachineOperationalIntelligence = {
     | MachineOperationalPriority
     | null
 }
+
+
+export type MachineSensor = {
+  id: number
+  machine_id: number
+  name: string
+  sensor_type: string
+  unit: string
+  status: string
+  created_at: string
+}
