@@ -87,3 +87,24 @@ export type MachineSensor = {
   status: string
   created_at: string
 }
+
+export type MachineTelemetryReading = {
+  id: number
+  value: number
+  recorded_at: string
+}
+
+export type MachineSensorTelemetry = {
+  sensor_id: number
+  name: string
+  sensor_type: string
+  unit: string
+  status: string
+  latest_reading: MachineTelemetryReading | null
+  recent_readings: MachineTelemetryReading[]
+}
+
+export type MachineTelemetry = {
+  machine_id: number
+  sensors: MachineSensorTelemetry[]
+}

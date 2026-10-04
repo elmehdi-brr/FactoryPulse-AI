@@ -20,6 +20,7 @@ import {
   getMachineOperationalIntelligence,
   getMachineReliability,
   getMachineSensors,
+  getMachineTelemetry,
   getMachines,
 } from '../services/machines'
 import type {
@@ -27,6 +28,7 @@ import type {
   MachineOperationalIntelligence,
   MachineReliability,
   MachineSensor,
+  MachineTelemetry,
 } from '../types/machine'
 
 type PanelFailure = {
@@ -148,6 +150,37 @@ function formatHealthStatus(
   return 'Healthy'
 }
 
+function formatTelemetryValue(
+  value: number,
+  unit: string,
+): string {
+  const formattedValue =
+    Number.isInteger(value)
+      ? String(value)
+      : value.toFixed(1)
+
+  return `${formattedValue} ${unit}`
+}
+
+function formatTelemetryTime(
+  value: string,
+): string {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown time'
+  }
+
+  return date.toLocaleTimeString(
+    [],
+    {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    },
+  )
+}
+
   export function MachinesPage() {
   const [
     machines,
@@ -213,6 +246,21 @@ function formatHealthStatus(
   const [
     error,
     setError,
+  ] = useState<string | null>(null)
+
+  const [
+    selectedMachineTelemetry,
+    setSelectedMachineTelemetry,
+  ] = useState<MachineTelemetry | null>(null)
+
+  const [
+    loadingTelemetry,
+    setLoadingTelemetry,
+  ] = useState(false)
+
+  const [
+    telemetryError,
+    setTelemetryError,
   ] = useState<string | null>(null)
 
   const loading =
@@ -416,6 +464,59 @@ function formatHealthStatus(
     }
   }, [selectedMachineId])
 
+
+  useEffect(() => {
+    if (selectedMachineId === null) {
+      return
+    }
+
+    const machineId =
+      selectedMachineId
+
+    let cancelled = false
+
+    async function loadMachineTelemetry() {
+      setLoadingTelemetry(true)
+      setTelemetryError(null)
+      setSelectedMachineTelemetry(null)
+
+      try {
+        const response =
+          await getMachineTelemetry(
+            machineId,
+            12,
+          )
+
+        if (!cancelled) {
+          setSelectedMachineTelemetry(
+            response,
+          )
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        setTelemetryError(
+          requestError instanceof ApiError
+            ? requestError.message
+            : 'Unable to load machine telemetry.',
+        )
+
+        setSelectedMachineTelemetry(null)
+      } finally {
+        if (!cancelled) {
+          setLoadingTelemetry(false)
+        }
+      }
+    }
+
+    void loadMachineTelemetry()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMachineId])
   const selectedMachine =
     machines?.find(
       (machine) =>
@@ -1005,6 +1106,227 @@ function formatHealthStatus(
                                 </span>
                               </motion.div>
                             ),
+                          )}
+                        </div>
+                      )}
+                  </div>
+                  
+                  <div className="machine-telemetry">
+                    <div className="machine-telemetry-header">
+                      <div>
+                        <span className="panel-eyebrow">
+                          Live telemetry
+                        </span>
+
+                        <h3>
+                          Sensor readings
+                        </h3>
+                      </div>
+
+                      <Activity size={18} />
+                    </div>
+
+                    {loadingTelemetry && (
+                      <div className="dashboard-panel-state">
+                        Loading telemetry...
+                      </div>
+                    )}
+
+                    {!loadingTelemetry
+                      && telemetryError && (
+                        <div
+                          className="dashboard-data-error"
+                          role="alert"
+                        >
+                          <RefreshCw size={16} />
+
+                          <div>
+                            <strong>
+                              Telemetry unavailable
+                            </strong>
+
+                            <span>
+                              {telemetryError}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {!loadingTelemetry
+                      && !telemetryError
+                      && selectedMachineTelemetry
+                      && selectedMachineTelemetry.sensors.length === 0 && (
+                        <div className="machine-telemetry-empty">
+                          <Activity size={18} />
+
+                          <div>
+                            <strong>
+                              No telemetry available
+                            </strong>
+
+                            <span>
+                              The machine has no registered
+                              sensor readings yet.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {!loadingTelemetry
+                      && !telemetryError
+                      && selectedMachineTelemetry
+                      && selectedMachineTelemetry.sensors.length > 0 && (
+                        <div className="machine-telemetry-grid">
+                          {selectedMachineTelemetry.sensors.map(
+                            (sensor, index) => {
+                              const readings = [
+                                ...sensor.recent_readings,
+                              ].reverse()
+
+                              const values =
+                                readings.map(
+                                  (reading) =>
+                                    reading.value,
+                                )
+
+                              const minValue =
+                                values.length > 0
+                                  ? Math.min(...values)
+                                  : 0
+
+                              const maxValue =
+                                values.length > 0
+                                  ? Math.max(...values)
+                                  : 1
+
+                              const range =
+                                maxValue - minValue || 1
+
+                              const points =
+                                readings.map(
+                                  (reading, readingIndex) => {
+                                    const x =
+                                      readings.length === 1
+                                        ? 50
+                                        : (
+                                            readingIndex
+                                            / (
+                                                readings.length -
+                                                1
+                                              )
+                                          ) * 100
+
+                                    const y =
+                                      88 -
+                                      (
+                                        (
+                                          reading.value -
+                                          minValue
+                                        ) /
+                                        range
+                                      ) * 76
+
+                                    return `${x},${y}`
+                                  },
+                                )
+
+                              const latestReading =
+                                sensor.latest_reading
+
+                              return (
+                                <motion.article
+                                  key={sensor.sensor_id}
+                                  className="machine-telemetry-card"
+                                  initial={{
+                                    opacity: 0,
+                                    y: 8,
+                                  }}
+                                  animate={{
+                                    opacity: 1,
+                                    y: 0,
+                                  }}
+                                  transition={{
+                                    delay:
+                                      index * 0.05,
+                                  }}
+                                >
+                                  <div className="machine-telemetry-card-header">
+                                    <div>
+                                      <span>
+                                        {sensor.sensor_type}
+                                      </span>
+
+                                      <strong>
+                                        {sensor.name}
+                                      </strong>
+                                    </div>
+
+                                    <span
+                                      className={`machine-sensor-status machine-sensor-status-${sensor.status.trim().toLowerCase()}`}
+                                    >
+                                      {formatStatus(
+                                        sensor.status,
+                                      )}
+                                    </span>
+                                  </div>
+
+                                  <div className="machine-telemetry-reading">
+                                    <div>
+                                      <span>
+                                        Current value
+                                      </span>
+
+                                      <strong>
+                                        {latestReading
+                                          ? formatTelemetryValue(
+                                              latestReading.value,
+                                              sensor.unit,
+                                            )
+                                          : '—'}
+                                      </strong>
+                                    </div>
+
+                                    <span>
+                                      {latestReading
+                                        ? formatTelemetryTime(
+                                            latestReading.recorded_at,
+                                          )
+                                        : 'No reading yet'}
+                                    </span>
+                                  </div>
+
+                                  {values.length > 0 && (
+                                    <div className="machine-telemetry-chart">
+                                      <svg
+                                        viewBox="0 0 100 100"
+                                        role="img"
+                                        aria-label={`${sensor.name} recent telemetry trend`}
+                                      >
+                                        <polyline
+                                          points={points.join(' ')}
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2.5"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+
+                                      <div className="machine-telemetry-chart-meta">
+                                        <span>
+                                          {values.length}{' '}
+                                          recent readings
+                                        </span>
+
+                                        <span>
+                                          {sensor.unit}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </motion.article>
+                              )
+                            },
                           )}
                         </div>
                       )}

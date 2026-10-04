@@ -2,6 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
+
+from app.schemas.machine_telemetry import (
+    MachineTelemetryResponse,
+)
+from app.services.machine_telemetry_service import (
+    MachineTelemetryServiceError,
+    calculate_machine_telemetry,
+)
 from app.schemas.sensor import SensorResponse
 from app.services.sensor_service import (
     get_sensors_by_machine,
@@ -211,6 +219,38 @@ async def get_machine_sensors_endpoint(
         db,
         machine_id,
     )
+
+@router.get(
+    "/{machine_id}/telemetry",
+    response_model=MachineTelemetryResponse,
+)
+async def get_machine_telemetry_endpoint(
+    machine_id: int,
+    limit_per_sensor: int = 12,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> MachineTelemetryResponse:
+    try:
+        return await calculate_machine_telemetry(
+            db,
+            machine_id,
+            limit_per_sensor=limit_per_sensor,
+        )
+    except MachineTelemetryServiceError as exc:
+        message = str(exc)
+
+        if message == "Machine not found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=message,
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=message,
+        ) from exc
 
 @router.get(
     "/{machine_id}/operational-intelligence",

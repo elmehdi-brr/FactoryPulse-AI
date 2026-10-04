@@ -532,3 +532,147 @@ async def test_machine_sensor_navigation_rejects_unknown_machine(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Machine not found"
+
+
+
+async def test_machine_telemetry_returns_latest_and_recent_readings(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_base_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": hierarchy["production_line_id"],
+            "name": "Telemetry Motor",
+            "code": "TELEMETRY-MOTOR",
+            "location": "Production Line 1",
+            "status": "active",
+        },
+    )
+
+    assert machine_response.status_code == 201
+    machine = machine_response.json()
+
+    sensor_response = await client.post(
+        "/sensors",
+        headers=auth_headers["admin"],
+        json={
+            "machine_id": machine["id"],
+            "name": "Motor Temperature",
+            "sensor_type": "temperature",
+            "unit": "°C",
+            "status": "active",
+        },
+    )
+
+    assert sensor_response.status_code == 201
+    sensor = sensor_response.json()
+
+    for value in [50.0, 52.5, 55.0]:
+        reading_response = await client.post(
+            "/sensor-readings",
+            headers=auth_headers["technician"],
+            json={
+                "sensor_id": sensor["id"],
+                "value": value,
+            },
+        )
+
+        assert reading_response.status_code == 201
+
+    telemetry_response = await client.get(
+        f"/machines/{machine['id']}/telemetry",
+        headers=auth_headers["operator"],
+        params={
+            "limit_per_sensor": 2,
+        },
+    )
+
+    assert telemetry_response.status_code == 200
+
+    telemetry = telemetry_response.json()
+
+    assert telemetry["machine_id"] == machine["id"]
+    assert len(telemetry["sensors"]) == 1
+
+    telemetry_sensor = telemetry["sensors"][0]
+
+    assert telemetry_sensor["sensor_id"] == sensor["id"]
+    assert telemetry_sensor["latest_reading"]["value"] == 55.0
+    assert len(
+        telemetry_sensor["recent_readings"]
+    ) == 2
+
+
+async def test_machine_telemetry_includes_sensors_without_readings(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    hierarchy = await create_base_hierarchy(
+        client,
+        auth_headers["admin"],
+    )
+
+    machine_response = await client.post(
+        "/machines",
+        headers=auth_headers["admin"],
+        json={
+            "area_id": hierarchy["area_id"],
+            "production_line_id": hierarchy["production_line_id"],
+            "name": "Idle Telemetry Motor",
+            "code": "IDLE-TELEMETRY-MOTOR",
+            "location": "Production Line 1",
+            "status": "active",
+        },
+    )
+
+    assert machine_response.status_code == 201
+    machine = machine_response.json()
+
+    sensor_response = await client.post(
+        "/sensors",
+        headers=auth_headers["admin"],
+        json={
+            "machine_id": machine["id"],
+            "name": "Motor Vibration",
+            "sensor_type": "vibration",
+            "unit": "mm/s",
+            "status": "active",
+        },
+    )
+
+    assert sensor_response.status_code == 201
+
+    response = await client.get(
+        f"/machines/{machine['id']}/telemetry",
+        headers=auth_headers["operator"],
+    )
+
+    assert response.status_code == 200
+
+    telemetry_sensor = response.json()[
+        "sensors"
+    ][0]
+
+    assert telemetry_sensor["latest_reading"] is None
+    assert telemetry_sensor["recent_readings"] == []
+
+
+async def test_machine_telemetry_rejects_unknown_machine(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/machines/999999/telemetry",
+        headers=auth_headers["operator"],
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Machine not found"

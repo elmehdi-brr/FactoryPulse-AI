@@ -5607,6 +5607,8 @@ a {
 .machines-list {
   display: grid;
   gap: 8px;
+  align-self: start;
+  grid-auto-rows: max-content;
 }
 
 .machine-list-item {
@@ -6369,5 +6371,146 @@ a {
 
   .machine-sensor-unit {
     display: none;
+  }
+}
+
+/* =========================================================
+   MACHINE TELEMETRY
+   ========================================================= */
+
+.machine-telemetry {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--viz-border);
+}
+
+.machine-telemetry-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.machine-telemetry-header h3 {
+  margin: 0.25rem 0 0;
+}
+
+.machine-telemetry-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    2,
+    minmax(0, 1fr)
+  );
+  gap: 0.75rem;
+}
+
+.machine-telemetry-card {
+  padding: 1rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 16px;
+  background: var(--viz-card);
+}
+
+.machine-telemetry-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.machine-telemetry-card-header span:first-child {
+  display: block;
+  color: var(--viz-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.machine-telemetry-card-header strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.92rem;
+}
+
+.machine-telemetry-reading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.machine-telemetry-reading > div span {
+  display: block;
+  color: var(--viz-muted);
+  font-size: 0.72rem;
+}
+
+.machine-telemetry-reading strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.machine-telemetry-reading > span {
+  color: var(--viz-muted);
+  font-size: 0.72rem;
+}
+
+.machine-telemetry-chart {
+  margin-top: 1rem;
+}
+
+.machine-telemetry-chart svg {
+  display: block;
+  width: 100%;
+  height: 92px;
+  color: var(--viz-accent);
+  overflow: visible;
+}
+
+.machine-telemetry-chart-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.35rem;
+  color: var(--viz-muted);
+  font-size: 0.7rem;
+}
+
+.machine-telemetry-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px dashed var(--viz-border);
+  border-radius: 14px;
+  color: var(--viz-muted);
+}
+
+.machine-telemetry-empty strong {
+  display: block;
+  color: var(--viz-text);
+  font-size: 0.88rem;
+}
+
+.machine-telemetry-empty span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 760px) {
+  .machine-telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .machine-telemetry-reading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

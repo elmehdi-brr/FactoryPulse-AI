@@ -4,6 +4,7 @@ import type {
   MachineOperationalIntelligence,
   MachineReliability,
   MachineSensor,
+  MachineTelemetry,
 } from '../types/machine'
 
 export async function getMachines(): Promise<
@@ -81,5 +82,19 @@ export async function getMachineSensors(
 ): Promise<MachineSensor[]> {
   return apiRequest<MachineSensor[]>(
     `/machines/${machineId}/sensors`,
+  )
+}
+
+
+export async function getMachineTelemetry(
+  machineId: number,
+  limitPerSensor = 12,
+): Promise<MachineTelemetry> {
+  const searchParams = new URLSearchParams({
+    limit_per_sensor: String(limitPerSensor),
+  })
+
+  return apiRequest<MachineTelemetry>(
+    `/machines/${machineId}/telemetry?${searchParams.toString()}`,
   )
 }
