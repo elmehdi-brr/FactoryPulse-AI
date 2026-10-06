@@ -133,3 +133,66 @@ export type MachinePredictions = {
   machine_id: number
   predictions: MachinePrediction[]
 }
+
+export type MachineMaintenanceRecord = {
+  id: number
+
+  machine_id: number
+  alert_id: number | null
+  performed_by_user_id: number | null
+
+  maintenance_type:
+    | 'preventive'
+    | 'corrective'
+
+  description: string
+
+  status:
+    | 'planned'
+    | 'in_progress'
+    | 'completed'
+    | 'verified'
+    | 'cancelled'
+
+  performed_at: string | null
+  created_at: string
+}
+
+export type MachineMaintenanceEffectiveness = {
+  machine_id: number
+
+  start_at: string | null
+  end_at: string | null
+
+  total_records: number
+
+  preventive_count: number
+  corrective_count: number
+  preventive_share: number | null
+
+  planned_count: number
+  in_progress_count: number
+  completed_count: number
+  verified_count: number
+  cancelled_count: number
+
+  finished_count: number
+  completion_rate: number | null
+  verification_rate: number | null
+
+  alert_linked_count: number
+  alert_link_rate: number | null
+
+  assigned_count: number
+  assignment_rate: number | null
+
+  total_alerts: number
+  responded_alert_count: number
+  unresponded_alert_count: number
+  response_rate: number | null
+
+  average_response_time_seconds: number | null
+  median_response_time_seconds: number | null
+  fastest_response_time_seconds: number | null
+  slowest_response_time_seconds: number | null
+}

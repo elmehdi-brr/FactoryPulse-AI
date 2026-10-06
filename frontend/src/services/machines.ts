@@ -1,6 +1,8 @@
 import { apiRequest } from './api'
 import type {
   Machine,
+  MachineMaintenanceEffectiveness,
+  MachineMaintenanceRecord,
   MachineOperationalIntelligence,
   MachinePredictions,
   MachineReliability,
@@ -110,5 +112,44 @@ export async function getMachinePredictions(
 
   return apiRequest<MachinePredictions>(
     `/machines/${machineId}/predictions?${searchParams.toString()}`,
+  )
+}
+
+export async function getMachineMaintenanceRecords(
+  machineId: number,
+): Promise<MachineMaintenanceRecord[]> {
+  return apiRequest<MachineMaintenanceRecord[]>(
+    `/machines/${machineId}/maintenance-records`,
+  )
+}
+
+export async function getMachineMaintenanceEffectiveness(
+  machineId: number,
+  startAt?: Date,
+  endAt?: Date,
+): Promise<MachineMaintenanceEffectiveness> {
+  const searchParams = new URLSearchParams()
+
+  if (startAt) {
+    searchParams.set(
+      'start_at',
+      startAt.toISOString(),
+    )
+  }
+
+  if (endAt) {
+    searchParams.set(
+      'end_at',
+      endAt.toISOString(),
+    )
+  }
+
+  const query =
+    searchParams.toString()
+
+  return apiRequest<MachineMaintenanceEffectiveness>(
+    `/machines/${machineId}/maintenance-analytics${
+      query ? `?${query}` : ''
+    }`,
   )
 }

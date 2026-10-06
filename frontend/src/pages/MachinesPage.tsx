@@ -6,6 +6,9 @@ import {
   RefreshCw,
   ShieldAlert,
   TriangleAlert,
+  CheckCircle2,
+  Clock3,
+  Wrench,
 } from 'lucide-react'
 import {
   motion,
@@ -17,6 +20,8 @@ import {
 
 import { ApiError } from '../services/api'
 import {
+  getMachineMaintenanceEffectiveness,
+  getMachineMaintenanceRecords,
   getMachineOperationalIntelligence,
   getMachinePredictions,
   getMachineReliability,
@@ -26,6 +31,8 @@ import {
 } from '../services/machines'
 import type {
   Machine,
+  MachineMaintenanceEffectiveness,
+  MachineMaintenanceRecord,
   MachineOperationalIntelligence,
   MachinePredictions,
   MachineReliability,
@@ -200,6 +207,62 @@ function formatPredictionStatus(
     ? 'Anomaly detected'
     : 'Normal prediction'
 }
+
+function formatMaintenanceDate(
+  value: string | null,
+): string {
+  if (!value) {
+    return 'Not performed'
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Unknown'
+  }
+
+  return date.toLocaleDateString(
+    [],
+    {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    },
+  )
+}
+
+function formatRate(
+  value: number | null,
+): string {
+  if (value === null) {
+    return '—'
+  }
+
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function formatMaintenanceType(
+  type: MachineMaintenanceRecord[
+    'maintenance_type'
+  ],
+): string {
+  return type === 'preventive'
+    ? 'Preventive'
+    : 'Corrective'
+}
+
+function formatMaintenanceRecordStatus(
+  status: MachineMaintenanceRecord[
+    'status'
+  ],
+): string {
+  return status
+    .replace('_', ' ')
+    .replace(
+      /^\w/,
+      (character) => character.toUpperCase(),
+    )
+}
   export function MachinesPage() {
   const [
     machines,
@@ -276,6 +339,40 @@ function formatPredictionStatus(
     loadingTelemetry,
     setLoadingTelemetry,
   ] = useState(false)
+
+  const [
+    selectedMachineMaintenanceRecords,
+    setSelectedMachineMaintenanceRecords,
+  ] = useState<MachineMaintenanceRecord[] | null>(
+    null,
+  )
+
+  const [
+    loadingMaintenanceRecords,
+    setLoadingMaintenanceRecords,
+  ] = useState(false)
+
+  const [
+    maintenanceRecordsError,
+    setMaintenanceRecordsError,
+  ] = useState<string | null>(null)
+
+  const [
+    selectedMachineMaintenanceEffectiveness,
+    setSelectedMachineMaintenanceEffectiveness,
+  ] = useState<MachineMaintenanceEffectiveness | null>(
+    null,
+  )
+
+  const [
+    loadingMaintenanceEffectiveness,
+    setLoadingMaintenanceEffectiveness,
+  ] = useState(false)
+
+  const [
+    maintenanceEffectivenessError,
+    setMaintenanceEffectivenessError,
+  ] = useState<string | null>(null)
 
   const [
     telemetryError,
@@ -599,6 +696,120 @@ function formatPredictionStatus(
     }
 
     void loadMachinePredictions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMachineId])
+
+  useEffect(() => {
+    if (selectedMachineId === null) {
+      return
+    }
+
+    const machineId =
+      selectedMachineId
+
+    let cancelled = false
+
+    async function loadMachineMaintenanceRecords() {
+      setLoadingMaintenanceRecords(true)
+      setMaintenanceRecordsError(null)
+      setSelectedMachineMaintenanceRecords(null)
+
+      try {
+        const response =
+          await getMachineMaintenanceRecords(
+            machineId,
+          )
+
+        if (!cancelled) {
+          setSelectedMachineMaintenanceRecords(
+            response,
+          )
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        setMaintenanceRecordsError(
+          requestError instanceof ApiError
+            ? requestError.message
+            : 'Unable to load machine maintenance records.',
+        )
+
+        setSelectedMachineMaintenanceRecords(
+          null,
+        )
+      } finally {
+        if (!cancelled) {
+          setLoadingMaintenanceRecords(
+            false,
+          )
+        }
+      }
+    }
+
+    void loadMachineMaintenanceRecords()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMachineId])
+
+  useEffect(() => {
+    if (selectedMachineId === null) {
+      return
+    }
+
+    const machineId =
+      selectedMachineId
+
+    let cancelled = false
+
+    async function loadMachineMaintenanceEffectiveness() {
+      setLoadingMaintenanceEffectiveness(true)
+      setMaintenanceEffectivenessError(null)
+      setSelectedMachineMaintenanceEffectiveness(
+        null,
+      )
+
+      try {
+        const response =
+          await getMachineMaintenanceEffectiveness(
+            machineId,
+          )
+
+        if (!cancelled) {
+          setSelectedMachineMaintenanceEffectiveness(
+            response,
+          )
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        setMaintenanceEffectivenessError(
+          requestError instanceof ApiError
+            ? requestError.message
+            : 'Unable to load machine maintenance effectiveness.',
+        )
+
+        setSelectedMachineMaintenanceEffectiveness(
+          null,
+        )
+      } finally {
+        if (!cancelled) {
+          setLoadingMaintenanceEffectiveness(
+            false,
+          )
+        }
+      }
+    }
+
+    void loadMachineMaintenanceEffectiveness()
 
     return () => {
       cancelled = true
@@ -1650,7 +1861,276 @@ function formatPredictionStatus(
                         </>
                       )}
                   </div>
+                  <div className="machine-maintenance">
+                    <div className="machine-maintenance-header">
+                      <div>
+                        <span className="panel-eyebrow">
+                          Maintenance
+                        </span>
 
+                        <h3>
+                          Maintenance effectiveness
+                        </h3>
+                      </div>
+
+                      <Wrench size={18} />
+                    </div>
+
+                    {loadingMaintenanceEffectiveness && (
+                      <div className="dashboard-panel-state">
+                        Loading maintenance analytics...
+                      </div>
+                    )}
+
+                    {!loadingMaintenanceEffectiveness
+                      && maintenanceEffectivenessError && (
+                        <div
+                          className="dashboard-data-error"
+                          role="alert"
+                        >
+                          <Wrench size={16} />
+
+                          <div>
+                            <strong>
+                              Maintenance analytics unavailable
+                            </strong>
+
+                            <span>
+                              {
+                                maintenanceEffectivenessError
+                              }
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {!loadingMaintenanceEffectiveness
+                      && !maintenanceEffectivenessError
+                      && selectedMachineMaintenanceEffectiveness
+                      && (
+                        <div className="machine-maintenance-metrics">
+                          <div className="machine-maintenance-metric">
+                            <span>
+                              Total records
+                            </span>
+
+                            <strong>
+                              {
+                                selectedMachineMaintenanceEffectiveness.total_records
+                              }
+                            </strong>
+                          </div>
+
+                          <div className="machine-maintenance-metric">
+                            <span>
+                              Preventive share
+                            </span>
+
+                            <strong>
+                              {formatRate(
+                                selectedMachineMaintenanceEffectiveness
+                                  .preventive_share,
+                              )}
+                            </strong>
+                          </div>
+
+                          <div className="machine-maintenance-metric">
+                            <span>
+                              Completion
+                            </span>
+
+                            <strong>
+                              {formatRate(
+                                selectedMachineMaintenanceEffectiveness
+                                  .completion_rate,
+                              )}
+                            </strong>
+                          </div>
+
+                          <div className="machine-maintenance-metric">
+                            <span>
+                              Verification
+                            </span>
+
+                            <strong>
+                              {formatRate(
+                                selectedMachineMaintenanceEffectiveness
+                                  .verification_rate,
+                              )}
+                            </strong>
+                          </div>
+
+                          <div className="machine-maintenance-metric">
+                            <span>
+                              Alert response
+                            </span>
+
+                            <strong>
+                              {formatRate(
+                                selectedMachineMaintenanceEffectiveness
+                                  .response_rate,
+                              )}
+                            </strong>
+                          </div>
+                        </div>
+                      )}
+
+                    <div className="machine-maintenance-history">
+                      <div className="machine-maintenance-history-header">
+                        <div>
+                          <span className="panel-eyebrow">
+                            Recent activity
+                          </span>
+
+                          <h3>
+                            Maintenance history
+                          </h3>
+                        </div>
+
+                        <span className="machine-maintenance-count">
+                          {selectedMachineMaintenanceRecords?.length ?? 0}
+                        </span>
+                      </div>
+
+                      {loadingMaintenanceRecords && (
+                        <div className="dashboard-panel-state">
+                          Loading maintenance history...
+                        </div>
+                      )}
+
+                      {!loadingMaintenanceRecords
+                        && maintenanceRecordsError && (
+                          <div
+                            className="dashboard-data-error"
+                            role="alert"
+                          >
+                            <Wrench size={16} />
+
+                            <div>
+                              <strong>
+                                Maintenance history unavailable
+                              </strong>
+
+                              <span>
+                                {
+                                  maintenanceRecordsError
+                                }
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                      {!loadingMaintenanceRecords
+                        && !maintenanceRecordsError
+                        && selectedMachineMaintenanceRecords
+                        && selectedMachineMaintenanceRecords.length === 0 && (
+                          <div className="machine-maintenance-empty">
+                            <Wrench size={18} />
+
+                            <div>
+                              <strong>
+                                No maintenance records
+                              </strong>
+
+                              <span>
+                                No maintenance activity has
+                                been recorded for this machine.
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                      {!loadingMaintenanceRecords
+                        && !maintenanceRecordsError
+                        && selectedMachineMaintenanceRecords
+                        && selectedMachineMaintenanceRecords.length > 0 && (
+                          <div className="machine-maintenance-list">
+                            {selectedMachineMaintenanceRecords
+                              .slice(0, 6)
+                              .map(
+                                (
+                                  record,
+                                  index,
+                                ) => (
+                                  <motion.article
+                                    key={record.id}
+                                    className="machine-maintenance-item"
+                                    initial={{
+                                      opacity: 0,
+                                      y: 8,
+                                    }}
+                                    animate={{
+                                      opacity: 1,
+                                      y: 0,
+                                    }}
+                                    transition={{
+                                      delay:
+                                        index * 0.04,
+                                    }}
+                                  >
+                                    <div className="machine-maintenance-icon">
+                                      {record.status ===
+                                        'completed'
+                                        || record.status ===
+                                          'verified' ? (
+                                        <CheckCircle2 size={17} />
+                                      ) : (
+                                        <Clock3 size={17} />
+                                      )}
+                                    </div>
+
+                                    <div className="machine-maintenance-main">
+                                      <div className="machine-maintenance-title">
+                                        <strong>
+                                          {
+                                            record.description
+                                          }
+                                        </strong>
+
+                                        <span
+                                          className={`machine-maintenance-status machine-maintenance-status-${record.status}`}
+                                        >
+                                          {formatMaintenanceRecordStatus(
+                                            record.status,
+                                          )}
+                                        </span>
+                                      </div>
+
+                                      <div className="machine-maintenance-meta">
+                                        <span>
+                                          {formatMaintenanceType(
+                                            record.maintenance_type,
+                                          )}
+                                        </span>
+
+                                        <span>
+                                          {formatMaintenanceDate(
+                                            record.performed_at,
+                                          )}
+                                        </span>
+
+                                        <span>
+                                          {record.alert_id !==
+                                          null
+                                            ? 'Alert linked'
+                                            : 'No alert linked'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </motion.article>
+                                ),
+                              )}
+                          </div>
+                        )}
+
+                      {selectedMachineMaintenanceRecords
+                        && selectedMachineMaintenanceRecords.length > 6 && (
+                        <p className="machine-maintenance-note">
+                          Showing the 6 most recent records.
+                        </p>
+                      )}
+                    </div>
+                  </div>
                   <div className="machine-reliability">
                     <div className="machine-reliability-header">
                       <div>
