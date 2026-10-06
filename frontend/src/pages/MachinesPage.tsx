@@ -18,6 +18,7 @@ import {
 import { ApiError } from '../services/api'
 import {
   getMachineOperationalIntelligence,
+  getMachinePredictions,
   getMachineReliability,
   getMachineSensors,
   getMachineTelemetry,
@@ -26,6 +27,7 @@ import {
 import type {
   Machine,
   MachineOperationalIntelligence,
+  MachinePredictions,
   MachineReliability,
   MachineSensor,
   MachineTelemetry,
@@ -181,6 +183,23 @@ function formatTelemetryTime(
   )
 }
 
+function formatAnomalyScore(
+  score: number | null,
+): string {
+  if (score === null) {
+    return '—'
+  }
+
+  return score.toFixed(2)
+}
+
+function formatPredictionStatus(
+  isAnomaly: boolean,
+): string {
+  return isAnomaly
+    ? 'Anomaly detected'
+    : 'Normal prediction'
+}
   export function MachinesPage() {
   const [
     machines,
@@ -261,6 +280,21 @@ function formatTelemetryTime(
   const [
     telemetryError,
     setTelemetryError,
+  ] = useState<string | null>(null)
+
+  const [
+    selectedMachinePredictions,
+    setSelectedMachinePredictions,
+  ] = useState<MachinePredictions | null>(null)
+
+  const [
+    loadingPredictions,
+    setLoadingPredictions,
+  ] = useState(false)
+
+  const [
+    predictionError,
+    setPredictionError,
   ] = useState<string | null>(null)
 
   const loading =
@@ -517,6 +551,60 @@ function formatTelemetryTime(
       cancelled = true
     }
   }, [selectedMachineId])
+
+  useEffect(() => {
+    if (selectedMachineId === null) {
+      return
+    }
+
+    const machineId =
+      selectedMachineId
+
+    let cancelled = false
+
+    async function loadMachinePredictions() {
+      setLoadingPredictions(true)
+      setPredictionError(null)
+      setSelectedMachinePredictions(null)
+
+      try {
+        const response =
+          await getMachinePredictions(
+            machineId,
+            20,
+          )
+
+        if (!cancelled) {
+          setSelectedMachinePredictions(
+            response,
+          )
+        }
+      } catch (requestError) {
+        if (cancelled) {
+          return
+        }
+
+        setPredictionError(
+          requestError instanceof ApiError
+            ? requestError.message
+            : 'Unable to load machine predictions.',
+        )
+
+        setSelectedMachinePredictions(null)
+      } finally {
+        if (!cancelled) {
+          setLoadingPredictions(false)
+        }
+      }
+    }
+
+    void loadMachinePredictions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMachineId])
+
   const selectedMachine =
     machines?.find(
       (machine) =>
@@ -1329,6 +1417,237 @@ function formatTelemetryTime(
                             },
                           )}
                         </div>
+                      )}
+                  </div>
+                  
+                  <div className="machine-ai">
+                    <div className="machine-ai-header">
+                      <div>
+                        <span className="panel-eyebrow">
+                          AI intelligence
+                        </span>
+
+                        <h3>
+                          Recent predictions
+                        </h3>
+                      </div>
+
+                      <span className="machine-ai-count">
+                        {selectedMachinePredictions?.predictions.length ?? 0}
+                      </span>
+                    </div>
+
+                    {loadingPredictions && (
+                      <div className="dashboard-panel-state">
+                        Loading AI predictions...
+                      </div>
+                    )}
+
+                    {!loadingPredictions
+                      && predictionError && (
+                        <div
+                          className="dashboard-data-error"
+                          role="alert"
+                        >
+                          <RefreshCw size={16} />
+
+                          <div>
+                            <strong>
+                              AI predictions unavailable
+                            </strong>
+
+                            <span>
+                              {predictionError}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {!loadingPredictions
+                      && !predictionError
+                      && selectedMachinePredictions
+                      && selectedMachinePredictions.predictions.length === 0 && (
+                        <div className="machine-ai-empty">
+                          <Activity size={18} />
+
+                          <div>
+                            <strong>
+                              No predictions yet
+                            </strong>
+
+                            <span>
+                              This machine does not have
+                              recent AI predictions.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                    {!loadingPredictions
+                      && !predictionError
+                      && selectedMachinePredictions
+                      && selectedMachinePredictions.predictions.length > 0 && (
+                        <>
+                          <div className="machine-ai-summary">
+                            <div className="machine-ai-summary-item">
+                              <span>
+                                Recent predictions
+                              </span>
+
+                              <strong>
+                                {
+                                  selectedMachinePredictions
+                                    .predictions.length
+                                }
+                              </strong>
+                            </div>
+
+                            <div className="machine-ai-summary-item">
+                              <span>
+                                Anomalies
+                              </span>
+
+                              <strong>
+                                {
+                                  selectedMachinePredictions
+                                    .predictions.filter(
+                                      (prediction) =>
+                                        prediction.is_anomaly,
+                                    )
+                                    .length
+                                }
+                              </strong>
+                            </div>
+                          </div>
+
+                          <div className="machine-prediction-list">
+                            {selectedMachinePredictions.predictions
+                              .slice(0, 6)
+                              .map(
+                                (
+                                  prediction,
+                                  index,
+                                ) => (
+                                  <motion.article
+                                    key={
+                                      prediction.prediction_id
+                                    }
+                                    className={`machine-prediction-item ${
+                                      prediction.is_anomaly
+                                        ? 'machine-prediction-item-anomaly'
+                                        : ''
+                                    }`}
+                                    initial={{
+                                      opacity: 0,
+                                      y: 8,
+                                    }}
+                                    animate={{
+                                      opacity: 1,
+                                      y: 0,
+                                    }}
+                                    transition={{
+                                      delay:
+                                        index * 0.04,
+                                    }}
+                                  >
+                                    <div className="machine-prediction-main">
+                                      <div className="machine-prediction-sensor">
+                                        <span>
+                                          {
+                                            prediction.sensor_type
+                                          }
+                                        </span>
+
+                                        <strong>
+                                          {
+                                            prediction.sensor_name
+                                          }
+                                        </strong>
+                                      </div>
+
+                                      <span
+                                        className={
+                                          prediction.is_anomaly
+                                            ? 'machine-prediction-status machine-prediction-status-anomaly'
+                                            : 'machine-prediction-status'
+                                        }
+                                      >
+                                        {formatPredictionStatus(
+                                          prediction.is_anomaly,
+                                        )}
+                                      </span>
+                                    </div>
+
+                                    <div className="machine-prediction-metrics">
+                                      <div>
+                                        <span>
+                                          Predicted
+                                        </span>
+
+                                        <strong>
+                                          {prediction.predicted_value}{' '}
+                                          {
+                                            prediction.unit
+                                          }
+                                        </strong>
+                                      </div>
+
+                                      <div>
+                                        <span>
+                                          Score
+                                        </span>
+
+                                        <strong>
+                                          {formatAnomalyScore(
+                                            prediction.anomaly_score,
+                                          )}
+                                        </strong>
+                                      </div>
+
+                                      <div>
+                                        <span>
+                                          Model
+                                        </span>
+
+                                        <strong>
+                                          {
+                                            prediction.model_name
+                                          }
+                                          {prediction.model_version
+                                            ? ` v${prediction.model_version}`
+                                            : ''}
+                                        </strong>
+                                      </div>
+
+                                      <div>
+                                        <span>
+                                          Predicted at
+                                        </span>
+
+                                        <strong>
+                                          {formatTelemetryTime(
+                                            prediction.predicted_at,
+                                          )}
+                                        </strong>
+                                      </div>
+                                    </div>
+                                  </motion.article>
+                                ),
+                              )}
+                          </div>
+
+                          {selectedMachinePredictions.predictions.length > 6 && (
+                            <p className="machine-ai-note">
+                              Showing the 6 most recent predictions
+                              from the latest{' '}
+                              {
+                                selectedMachinePredictions
+                                  .predictions.length
+                              }{' '}
+                              returned.
+                            </p>
+                          )}
+                        </>
                       )}
                   </div>
 

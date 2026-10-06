@@ -108,3 +108,28 @@ export type MachineTelemetry = {
   machine_id: number
   sensors: MachineSensorTelemetry[]
 }
+
+export type MachinePrediction = {
+  prediction_id: number
+
+  sensor_id: number
+  sensor_name: string
+  sensor_type: string
+  unit: string
+
+  source_reading_id: number | null
+
+  predicted_value: number
+  anomaly_score: number | null
+  is_anomaly: boolean
+
+  model_name: string
+  model_version: string | null
+
+  predicted_at: string
+}
+
+export type MachinePredictions = {
+  machine_id: number
+  predictions: MachinePrediction[]
+}

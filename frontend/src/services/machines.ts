@@ -2,6 +2,7 @@ import { apiRequest } from './api'
 import type {
   Machine,
   MachineOperationalIntelligence,
+  MachinePredictions,
   MachineReliability,
   MachineSensor,
   MachineTelemetry,
@@ -96,5 +97,18 @@ export async function getMachineTelemetry(
 
   return apiRequest<MachineTelemetry>(
     `/machines/${machineId}/telemetry?${searchParams.toString()}`,
+  )
+}
+
+export async function getMachinePredictions(
+  machineId: number,
+  limit = 20,
+): Promise<MachinePredictions> {
+  const searchParams = new URLSearchParams({
+    limit: String(limit),
+  })
+
+  return apiRequest<MachinePredictions>(
+    `/machines/${machineId}/predictions?${searchParams.toString()}`,
   )
 }

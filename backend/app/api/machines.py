@@ -3,6 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
 
+from app.schemas.machine_prediction import (
+    MachinePredictionsResponse,
+)
+from app.services.machine_prediction_service import (
+    MachinePredictionServiceError,
+    get_machine_predictions,
+)
 from app.schemas.machine_telemetry import (
     MachineTelemetryResponse,
 )
@@ -353,6 +360,37 @@ async def get_machine_operational_intelligence_endpoint(
         operational_priority=operational_priority,
     )
 
+@router.get(
+    "/{machine_id}/predictions",
+    response_model=MachinePredictionsResponse,
+)
+async def get_machine_predictions_endpoint(
+    machine_id: int,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(*ALL_ROLES)
+    ),
+) -> MachinePredictionsResponse:
+    try:
+        return await get_machine_predictions(
+            db,
+            machine_id,
+            limit=limit,
+        )
+    except MachinePredictionServiceError as exc:
+        message = str(exc)
+
+        if message == "Machine not found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=message,
+            ) from exc
+
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=message,
+        ) from exc
 @router.patch(
     "/{machine_id}",
     response_model=MachineResponse,

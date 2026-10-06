@@ -237,3 +237,132 @@ async def test_manual_prediction_without_source_reading_still_works(
     prediction = prediction_response.json()
 
     assert prediction["source_reading_id"] is None
+
+
+async def test_machine_predictions_return_recent_predictions(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    context = await create_sensor_context(
+        client,
+        auth_headers["admin"],
+    )
+
+    second_sensor_response = await client.post(
+        "/sensors",
+        headers=auth_headers["admin"],
+        json={
+            "machine_id": context["machine_id"],
+            "name": "Temperature Sensor B",
+            "sensor_type": "temperature",
+            "unit": "celsius",
+            "status": "active",
+        },
+    )
+
+    assert second_sensor_response.status_code == 201
+    second_sensor = second_sensor_response.json()
+
+    for sensor_id, predicted_value, is_anomaly in [
+        (context["sensor_id"], 86.2, True),
+        (second_sensor["id"], 72.4, False),
+        (context["sensor_id"], 88.1, True),
+    ]:
+        prediction_response = await client.post(
+            "/predictions",
+            headers=auth_headers["admin"],
+            json={
+                "sensor_id": sensor_id,
+                "source_reading_id": None,
+                "predicted_value": predicted_value,
+                "anomaly_score": (
+                    0.91 if is_anomaly else 0.15
+                ),
+                "is_anomaly": is_anomaly,
+                "model_name": "machine-test-model",
+                "model_version": "1.0",
+            },
+        )
+
+        assert prediction_response.status_code == 201
+
+    response = await client.get(
+        f"/machines/{context['machine_id']}/predictions",
+        headers=auth_headers["operator"],
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["machine_id"] == context["machine_id"]
+    assert len(data["predictions"]) == 3
+
+    assert all(
+        prediction["sensor_id"]
+        in {
+            context["sensor_id"],
+            second_sensor["id"],
+        }
+        for prediction in data["predictions"]
+    )
+
+    assert all(
+        prediction["sensor_name"] is not None
+        for prediction in data["predictions"]
+    )
+
+    assert all(
+        prediction["model_name"]
+        == "machine-test-model"
+        for prediction in data["predictions"]
+    )
+
+
+async def test_machine_predictions_respect_limit(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    context = await create_sensor_context(
+        client,
+        auth_headers["admin"],
+    )
+
+    for predicted_value in [40.0, 41.0, 42.0]:
+        prediction_response = await client.post(
+            "/predictions",
+            headers=auth_headers["admin"],
+            json={
+                "sensor_id": context["sensor_id"],
+                "source_reading_id": None,
+                "predicted_value": predicted_value,
+                "anomaly_score": 0.1,
+                "is_anomaly": False,
+                "model_name": "limit-test-model",
+                "model_version": "1.0",
+            },
+        )
+
+        assert prediction_response.status_code == 201
+
+    response = await client.get(
+        f"/machines/{context['machine_id']}/predictions",
+        headers=auth_headers["operator"],
+        params={"limit": 2},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["predictions"]) == 2
+
+
+async def test_machine_predictions_reject_unknown_machine(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    response = await client.get(
+        "/machines/999999/predictions",
+        headers=auth_headers["operator"],
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Machine not found"

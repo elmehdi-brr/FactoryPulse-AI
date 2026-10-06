@@ -6514,3 +6514,199 @@ a {
     flex-direction: column;
   }
 }
+
+
+/* =========================================================
+   MACHINE AI PREDICTIONS
+   ========================================================= */
+
+.machine-ai {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--viz-border);
+}
+
+.machine-ai-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.machine-ai-header h3 {
+  margin: 0.25rem 0 0;
+}
+
+.machine-ai-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 0.6rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 999px;
+  background: var(--viz-chip-card);
+  font-weight: 600;
+}
+
+.machine-ai-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.machine-ai-summary-item {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 14px;
+  background: var(--viz-card);
+}
+
+.machine-ai-summary-item span {
+  display: block;
+  color: var(--viz-muted);
+  font-size: 0.76rem;
+}
+
+.machine-ai-summary-item strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 1.15rem;
+}
+
+.machine-prediction-list {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.machine-prediction-item {
+  padding: 0.9rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 15px;
+  background: var(--viz-card);
+}
+
+.machine-prediction-item-anomaly {
+  border-color: color-mix(
+    in srgb,
+    var(--viz-accent) 52%,
+    var(--viz-border)
+  );
+}
+
+.machine-prediction-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.machine-prediction-sensor span {
+  display: block;
+  color: var(--viz-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.machine-prediction-sensor strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.9rem;
+}
+
+.machine-prediction-status {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--viz-border);
+  border-radius: 999px;
+  color: var(--viz-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.machine-prediction-status-anomaly {
+  background: var(--viz-accent-bg);
+  color: var(--viz-text);
+}
+
+.machine-prediction-metrics {
+  display: grid;
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.machine-prediction-metrics > div {
+  min-width: 0;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--viz-border);
+}
+
+.machine-prediction-metrics span {
+  display: block;
+  color: var(--viz-muted);
+  font-size: 0.69rem;
+}
+
+.machine-prediction-metrics strong {
+  display: block;
+  margin-top: 0.2rem;
+  overflow: hidden;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.machine-ai-note {
+  margin: 0.7rem 0 0;
+  color: var(--viz-muted);
+  font-size: 0.72rem;
+}
+
+.machine-ai-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 1rem;
+  border: 1px dashed var(--viz-border);
+  border-radius: 14px;
+  color: var(--viz-muted);
+}
+
+.machine-ai-empty strong {
+  display: block;
+  color: var(--viz-text);
+  font-size: 0.88rem;
+}
+
+.machine-ai-empty span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 900px) {
+  .machine-prediction-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .machine-ai-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .machine-prediction-main {
+    flex-direction: column;
+  }
+
+  .machine-prediction-metrics {
+    grid-template-columns: 1fr;
+  }
+}
