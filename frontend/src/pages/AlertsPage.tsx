@@ -1,8 +1,9 @@
-
 import {
   Activity,
   BellRing,
+  CheckCircle2,
   Clock3,
+  RotateCcw,
   Search,
   ShieldAlert,
 } from 'lucide-react'
@@ -13,10 +14,15 @@ import {
   useState,
 } from 'react'
 
+import {
+  notifyAlertsUpdated,
+} from '../services/alertEvents'
+
 import { ApiError } from '../services/api'
 import {
   getAlertSensors,
   getAlerts,
+  updateAlert,
 } from '../services/alerts'
 import { getMachines } from '../services/machines'
 import type {
@@ -86,6 +92,20 @@ export function AlertsPage() {
     useState('all')
   const [selectedAlertId, setSelectedAlertId] =
     useState<number | null>(null)
+  const [
+    updatingAlertId,
+    setUpdatingAlertId,
+  ] = useState<number | null>(null)
+
+  const [
+    updateError,
+    setUpdateError,
+  ] = useState<string | null>(null)
+
+  const [
+    updateNotice,
+    setUpdateNotice,
+  ] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -263,6 +283,92 @@ export function AlertsPage() {
       normalizeValue(alert.status) === 'open',
   ).length
 
+
+  async function handleAlertStatusChange(
+    nextStatus: 'acknowledged' | 'open',
+  ) {
+    if (!selectedAlert) {
+      return
+    }
+
+    const alertId = selectedAlert.id
+
+    setUpdatingAlertId(alertId)
+    setUpdateError(null)
+    setUpdateNotice(null)
+
+    try {
+      const updatedAlert = await updateAlert(
+        alertId,
+        {
+          status: nextStatus,
+        },
+      )
+
+      const nextAlerts = (
+        data?.alerts ?? []
+      ).map((alert) =>
+        alert.id === updatedAlert.id
+          ? updatedAlert
+          : alert,
+      )
+      const hasMatchingStatus = nextAlerts.some(
+        (alert) =>
+            normalizeValue(alert.status) ===
+            normalizeValue(statusFilter),
+    )
+
+      if (
+        statusFilter !== 'all' &&
+        !hasMatchingStatus
+    ) {
+        setStatusFilter('all')
+     }
+
+      setData((current) => {
+        if (!current) {
+          return current
+        }
+
+        return {
+          ...current,
+          alerts: current.alerts.map(
+            (alert) =>
+              alert.id === updatedAlert.id
+                ? updatedAlert
+                : alert,
+          ),
+        }
+      })
+
+      notifyAlertsUpdated(
+        nextAlerts.filter(
+          (alert) =>
+            normalizeValue(alert.status) === 'open',
+        ).length,
+      )
+
+      setSelectedAlertId(
+        updatedAlert.id,
+      )
+
+      setSelectedAlertId(updatedAlert.id)
+
+      setUpdateNotice(
+        nextStatus === 'acknowledged'
+          ? `Alert #${alertId} acknowledged successfully.`
+          : `Alert #${alertId} reopened successfully.`,
+      )
+    } catch (requestError) {
+      setUpdateError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : 'Unable to update this alert.',
+      )
+    } finally {
+      setUpdatingAlertId(null)
+    }
+  }
   return (
     <div className="alerts-page">
       <section className="page-heading">
@@ -585,6 +691,62 @@ export function AlertsPage() {
               <p className="alert-detail-message">
                 {selectedAlert.message}
               </p>
+
+              {updateError && (
+                <div
+                  className="alert-update-feedback alert-update-feedback-error"
+                  role="alert"
+                >
+                  {updateError}
+                </div>
+              )}
+
+              {updateNotice && (
+                <div
+                  className="alert-update-feedback alert-update-feedback-success"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {updateNotice}
+                </div>
+              )}
+
+              {(normalizeValue(selectedAlert.status) === 'open'
+                || normalizeValue(selectedAlert.status) === 'acknowledged') && (
+                <div className="alert-actions">
+                  {normalizeValue(selectedAlert.status) === 'open' ? (
+                    <button
+                      type="button"
+                      className="alert-action-button"
+                      disabled={updatingAlertId === selectedAlert.id}
+                      onClick={() => {
+                        void handleAlertStatusChange('acknowledged')
+                      }}
+                    >
+                      <CheckCircle2 size={16} />
+
+                      {updatingAlertId === selectedAlert.id
+                        ? 'Updating...'
+                        : 'Acknowledge alert'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="alert-action-button alert-action-button-secondary"
+                      disabled={updatingAlertId === selectedAlert.id}
+                      onClick={() => {
+                        void handleAlertStatusChange('open')
+                      }}
+                    >
+                      <RotateCcw size={16} />
+
+                      {updatingAlertId === selectedAlert.id
+                        ? 'Updating...'
+                        : 'Reopen alert'}
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="alert-detail-section">
                 <span className="panel-eyebrow">

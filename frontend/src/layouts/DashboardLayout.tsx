@@ -31,6 +31,9 @@ import { useAuth } from '../auth/authContext'
 import { CommandPalette } from '../components/shell/CommandPalette'
 import { NotificationCenter } from '../components/shell/NotificationCenter'
 import { getDashboardOverview } from '../services/dashboard'
+import {
+  subscribeToAlertsUpdated,
+} from '../services/alertEvents'
 import type {
   DashboardRecentAlert,
 } from '../types/dashboard'
@@ -218,8 +221,24 @@ export function DashboardLayout() {
 
     void loadAlerts()
 
+    const unsubscribe =
+      subscribeToAlertsUpdated(
+        (nextOpenAlertCount) => {
+          if (
+            typeof nextOpenAlertCount === 'number'
+          ) {
+            setOpenAlertCount(
+              nextOpenAlertCount,
+            )
+          }
+
+          void loadAlerts()
+        },
+      )
+
     return () => {
       cancelled = true
+      unsubscribe()
     }
   }, [])
 
