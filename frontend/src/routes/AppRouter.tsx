@@ -5,6 +5,7 @@ import {
   Routes,
 } from 'react-router-dom'
 
+import { AlertsPage } from '../pages/AlertsPage'
 import { AuthProvider } from '../auth/AuthProvider'
 import { DashboardLayout } from '../layouts/DashboardLayout'
 import { OverviewPage } from '../pages/OverviewPage'
@@ -76,13 +77,7 @@ export function AppRouter() {
 
               <Route
                 path="/alerts"
-                element={
-                  <PlaceholderPage
-                    eyebrow="Operational Awareness"
-                    title="Alerts"
-                    description="AI-generated alerts, severity, response state, and industrial events will live here."
-                  />
-                }
+                element={<AlertsPage />}
               />
 
               <Route
