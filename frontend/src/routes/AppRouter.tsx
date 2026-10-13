@@ -9,13 +9,13 @@ import { AlertsPage } from '../pages/AlertsPage'
 import { AuthProvider } from '../auth/AuthProvider'
 import { DashboardLayout } from '../layouts/DashboardLayout'
 import { OverviewPage } from '../pages/OverviewPage'
-import { PlaceholderPage } from '../pages/PlaceholderPage'
 import { ProtectedRoute } from './ProtectedRoute'
 import { LoginPage } from '../pages/LoginPage'
 import { ProductionPage } from '../pages/ProductionPage'
 import { MachinesPage } from '../pages/MachinesPage'
 import { MaintenancePage } from '../pages/MaintenancePage'
 import { SettingsPage } from '../pages/SettingsPage'
+import { ProfilePage } from '../pages/ProfilePage'
 
 export function AppRouter() {
   return (
@@ -42,13 +42,7 @@ export function AppRouter() {
 
               <Route
                 path="/profile"
-                element={
-                  <PlaceholderPage
-                    eyebrow="Account"
-                    title="Profile"
-                    description="Manage your FactoryPulse account information and identity."
-                  />
-                }
+                element={<ProfilePage />}
               />
 
               <Route
