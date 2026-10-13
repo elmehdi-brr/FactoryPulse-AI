@@ -14,6 +14,7 @@ import { ProtectedRoute } from './ProtectedRoute'
 import { LoginPage } from '../pages/LoginPage'
 import { ProductionPage } from '../pages/ProductionPage'
 import { MachinesPage } from '../pages/MachinesPage'
+import { MaintenancePage } from '../pages/MaintenancePage'
 
 export function AppRouter() {
   return (
@@ -82,13 +83,7 @@ export function AppRouter() {
 
               <Route
                 path="/maintenance"
-                element={
-                  <PlaceholderPage
-                    eyebrow="Maintenance Intelligence"
-                    title="Maintenance"
-                    description="Maintenance interventions, response effectiveness, assignments, and history will live here."
-                  />
-                }
+                element={<MaintenancePage />}
               />
             </Route>
           </Route>
