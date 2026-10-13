@@ -919,8 +919,8 @@ function formatMaintenanceRecordStatus(
                           : 'machine-list-item'
                       }
                       onClick={() => {
-                        setSelectedMachineId(
-                          machine.id,
+                        setSelectedMachineId((current) =>
+                          current === machine.id ? null : machine.id,
                         )
                       }}
                       initial={{

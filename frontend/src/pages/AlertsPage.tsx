@@ -256,7 +256,7 @@ export function AlertsPage() {
   const selectedAlert =
     filteredAlerts.find(
       (alert) => alert.id === selectedAlertId,
-    ) ?? filteredAlerts[0] ?? null
+    ) ?? null
 
   const selectedSensor = selectedAlert
     ? sensorsById.get(selectedAlert.sensor_id)
@@ -486,9 +486,12 @@ export function AlertsPage() {
               <input
                 type="search"
                 value={search}
-                onChange={(event) =>
+                onChange={(event) => {
                   setSearch(event.target.value)
-                }
+                  setSelectedAlertId(null)
+                  setUpdateError(null)
+                  setUpdateNotice(null)
+                }}
                 placeholder="Search alerts or machines..."
                 aria-label="Search alerts or machines"
               />
@@ -500,9 +503,12 @@ export function AlertsPage() {
 
                 <select
                   value={severityFilter}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setSeverityFilter(event.target.value)
-                  }
+                    setSelectedAlertId(null)
+                    setUpdateError(null)
+                    setUpdateNotice(null)
+                  }}
                 >
                   <option value="all">
                     All severities
@@ -524,9 +530,12 @@ export function AlertsPage() {
 
                 <select
                   value={statusFilter}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setStatusFilter(event.target.value)
-                  }
+                    setSelectedAlertId(null)
+                    setUpdateError(null)
+                    setUpdateNotice(null)
+                  }}
                 >
                   <option value="all">
                     All statuses
@@ -585,9 +594,13 @@ export function AlertsPage() {
                         ? 'alert-list-item alert-list-item-selected'
                         : 'alert-list-item'
                     }
-                    onClick={() =>
-                      setSelectedAlertId(alert.id)
-                    }
+                    onClick={() => {
+                      setSelectedAlertId((current) =>
+                        current === alert.id ? null : alert.id,
+                      )
+                      setUpdateError(null)
+                      setUpdateNotice(null)
+                    }}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{

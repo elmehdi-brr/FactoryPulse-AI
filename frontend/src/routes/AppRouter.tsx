@@ -15,6 +15,7 @@ import { LoginPage } from '../pages/LoginPage'
 import { ProductionPage } from '../pages/ProductionPage'
 import { MachinesPage } from '../pages/MachinesPage'
 import { MaintenancePage } from '../pages/MaintenancePage'
+import { SettingsPage } from '../pages/SettingsPage'
 
 export function AppRouter() {
   return (
@@ -52,13 +53,7 @@ export function AppRouter() {
 
               <Route
                 path="/settings"
-                element={
-                  <PlaceholderPage
-                  eyebrow="Workspace"
-                  title="Settings"
-                  description="Configure FactoryPulse workspace and application preferences."
-                  />
-                }
+                element={<SettingsPage />}
               />
 
               <Route

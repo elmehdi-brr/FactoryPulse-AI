@@ -697,8 +697,8 @@ export function ProductionPage() {
                         : 'production-line-selector-item'
                     }
                     onClick={() => {
-                      setSelectedLineId(
-                        line.id,
+                      setSelectedLineId((current) =>
+                        current === line.id ? null : line.id,
                       )
                     }}
                     initial={{
