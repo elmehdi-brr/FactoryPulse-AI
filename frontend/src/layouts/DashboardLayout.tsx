@@ -37,6 +37,9 @@ import {
 import type {
   DashboardRecentAlert,
 } from '../types/dashboard'
+import { ApiError } from '../services/api'
+import { getUserNotifications } from '../services/notifications'
+import type { AppNotification } from '../types/notification'
 
 const navigation = [
   {
@@ -143,6 +146,15 @@ export function DashboardLayout() {
     setRecentAlerts,
   ] = useState<DashboardRecentAlert[]>([])
 
+  const [notifications, setNotifications] =
+    useState<AppNotification[]>([])
+
+  const [notificationsLoading, setNotificationsLoading] =
+    useState(true)
+
+  const [notificationsError, setNotificationsError] =
+    useState<string | null>(null)
+
   const [
     openAlertCount,
     setOpenAlertCount,
@@ -153,10 +165,6 @@ export function DashboardLayout() {
     setAlertsLoading,
   ] = useState(true)
 
-  const [
-    alertsError,
-    setAlertsError,
-  ] = useState<string | null>(null)
 
   const isMac =
     typeof navigator !== 'undefined'
@@ -179,68 +187,84 @@ export function DashboardLayout() {
   const roleLabel =
     getRoleLabel(user?.role_name)
 
-  useEffect(() => {
-    let cancelled = false
+useEffect(() => {
+  const currentUserId = user?.id
 
-    async function loadAlerts() {
-      setAlertsLoading(true)
-      setAlertsError(null)
+  if (currentUserId === undefined) {
+    return
+  }
 
-      try {
-        const overview =
-          await getDashboardOverview()
+  const userId = currentUserId
+  let cancelled = false
 
-        if (cancelled) {
-          return
-        }
+  async function loadAlerts() {
+    setAlertsLoading(true)
 
-        setRecentAlerts(
-          overview.recent_alerts,
-        )
+    try {
+      const overview = await getDashboardOverview()
 
-        setOpenAlertCount(
-          overview.kpis.active_alert_count,
-        )
-      } catch {
-        if (cancelled) {
-          return
-        }
+      if (cancelled) return
 
-        setRecentAlerts([])
-        setOpenAlertCount(null)
+      setRecentAlerts(overview.recent_alerts)
+      setOpenAlertCount(overview.kpis.active_alert_count)
+    } catch {
+      if (cancelled) return
 
-        setAlertsError(
-          'Unable to load notifications.',
-        )
-      } finally {
-        if (!cancelled) {
-          setAlertsLoading(false)
-        }
+      setRecentAlerts([])
+      setOpenAlertCount(null)
+    } finally {
+      if (!cancelled) {
+        setAlertsLoading(false)
       }
     }
+  }
 
-    void loadAlerts()
+  async function loadNotifications() {
+    setNotificationsLoading(true)
+    setNotificationsError(null)
 
-    const unsubscribe =
-      subscribeToAlertsUpdated(
-        (nextOpenAlertCount) => {
-          if (
-            typeof nextOpenAlertCount === 'number'
-          ) {
-            setOpenAlertCount(
-              nextOpenAlertCount,
-            )
-          }
+    try {
+      const result = await getUserNotifications(userId)
 
-          void loadAlerts()
-        },
+      if (cancelled) return
+
+      setNotifications(result)
+    } catch (requestError) {
+      if (cancelled) return
+
+      setNotifications([])
+
+      setNotificationsError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : 'Unable to load notifications.',
       )
-
-    return () => {
-      cancelled = true
-      unsubscribe()
+    } finally {
+      if (!cancelled) {
+        setNotificationsLoading(false)
+      }
     }
-  }, [])
+  }
+
+  void loadAlerts()
+  void loadNotifications()
+
+  const unsubscribe = subscribeToAlertsUpdated(
+    (nextOpenAlertCount) => {
+      if (typeof nextOpenAlertCount === 'number') {
+        setOpenAlertCount(nextOpenAlertCount)
+      }
+
+      void loadAlerts()
+      void loadNotifications()
+    },
+  )
+
+  return () => {
+    cancelled = true
+    unsubscribe()
+  }
+}, [user?.id])
 
   useEffect(() => {
     function handleKeyboardShortcut(
@@ -687,12 +711,20 @@ export function DashboardLayout() {
         onClose={() => {
           setNotificationCenterOpen(false)
         }}
-        onUnreadCountChange={
-          setUnreadNotificationCount
-        }
+        onUnreadCountChange={setUnreadNotificationCount}
         alerts={recentAlerts}
-        loading={alertsLoading}
-        error={alertsError}
+        notifications={notifications}
+        onNotificationUpdated={(updatedNotification) => {
+          setNotifications((current) =>
+            current.map((notification) =>
+              notification.id === updatedNotification.id
+                ? updatedNotification
+                : notification,
+            ),
+          )
+        }}
+        loading={notificationsLoading || alertsLoading}
+        error={notificationsError}
       />
 
       <CommandPalette

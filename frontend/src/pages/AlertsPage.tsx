@@ -30,6 +30,7 @@ import type {
   AlertSensorContext,
 } from '../types/alert'
 import type { Machine } from '../types/machine'
+import { useSearchParams } from 'react-router-dom'
 
 function normalizeValue(value: string): string {
   return value.trim().toLowerCase()
@@ -153,6 +154,25 @@ export function AlertsPage() {
     }
   }, [])
 
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const alertIdFromUrl = searchParams.get('alertId')
+
+  const requestedAlertId =
+    alertIdFromUrl && /^\d+$/.test(alertIdFromUrl)
+      ? Number(alertIdFromUrl)
+      : null
+
+  function clearAlertDeepLink() {
+    if (!searchParams.has('alertId')) {
+      return
+    }
+
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('alertId')
+
+    setSearchParams(nextParams, { replace: true })
+  }
   const sensorsById = useMemo(
     () =>
       new Map(
@@ -255,8 +275,12 @@ export function AlertsPage() {
 
   const selectedAlert =
     filteredAlerts.find(
+      (alert) => alert.id === requestedAlertId,
+    ) ??
+    filteredAlerts.find(
       (alert) => alert.id === selectedAlertId,
-    ) ?? null
+    ) ??
+    null
 
   const selectedSensor = selectedAlert
     ? sensorsById.get(selectedAlert.sensor_id)
@@ -491,6 +515,7 @@ export function AlertsPage() {
                   setSelectedAlertId(null)
                   setUpdateError(null)
                   setUpdateNotice(null)
+                  clearAlertDeepLink()
                 }}
                 placeholder="Search alerts or machines..."
                 aria-label="Search alerts or machines"
@@ -508,6 +533,7 @@ export function AlertsPage() {
                     setSelectedAlertId(null)
                     setUpdateError(null)
                     setUpdateNotice(null)
+                    clearAlertDeepLink()
                   }}
                 >
                   <option value="all">
@@ -535,6 +561,7 @@ export function AlertsPage() {
                     setSelectedAlertId(null)
                     setUpdateError(null)
                     setUpdateNotice(null)
+                    clearAlertDeepLink()
                   }}
                 >
                   <option value="all">
@@ -595,9 +622,15 @@ export function AlertsPage() {
                         : 'alert-list-item'
                     }
                     onClick={() => {
-                      setSelectedAlertId((current) =>
-                        current === alert.id ? null : alert.id,
+                      const isCurrentlySelected =
+                        selectedAlert?.id === alert.id
+
+                      clearAlertDeepLink()
+
+                      setSelectedAlertId(
+                        isCurrentlySelected ? null : alert.id,
                       )
+
                       setUpdateError(null)
                       setUpdateNotice(null)
                     }}

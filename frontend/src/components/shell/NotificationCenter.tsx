@@ -18,9 +18,14 @@ import {
 } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { ApiError } from '../../services/api'
+import { updateNotification } from '../../services/notifications'
 import type {
   DashboardRecentAlert,
 } from '../../types/dashboard'
+import type {
+  AppNotification,
+} from '../../types/notification'
 import { formatRelativeTime } from '../../utils/time'
 
 type NotificationSeverity =
@@ -43,6 +48,10 @@ type NotificationCenterProps = {
   onClose: () => void
   onUnreadCountChange: (count: number) => void
   alerts: DashboardRecentAlert[]
+  notifications: AppNotification[]
+  onNotificationUpdated: (
+    notification: AppNotification,
+  ) => void
   loading?: boolean
   error?: string | null
 }
@@ -50,16 +59,15 @@ type NotificationCenterProps = {
 function toNotificationSeverity(
   severity: string,
 ): NotificationSeverity {
-  const normalized =
-    severity.trim().toLowerCase()
+  const normalized = severity.trim().toLowerCase()
 
   if (normalized === 'critical') {
     return 'critical'
   }
 
   if (
-    normalized === 'high'
-    || normalized === 'medium'
+    normalized === 'high' ||
+    normalized === 'medium'
   ) {
     return 'high'
   }
@@ -86,63 +94,205 @@ export function NotificationCenter({
   onClose,
   onUnreadCountChange,
   alerts,
+  notifications,
+  onNotificationUpdated,
   loading = false,
   error = null,
 }: NotificationCenterProps) {
   const navigate = useNavigate()
 
-  const [readIds, setReadIds] = useState<number[]>(
-    [],
-  )
+  const [updatingIds, setUpdatingIds] =
+    useState<number[]>([])
 
-  const notifications: NotificationItem[] = useMemo(
-    () =>
-      alerts.map((alert) => ({
-        id: alert.id,
-        severity: toNotificationSeverity(
-          alert.severity,
-        ),
-        title: alert.title,
-        message: alert.message,
-        source: alert.machine_name,
-        time: formatRelativeTime(
-          alert.created_at,
-        ),
-        read: readIds.includes(alert.id),
-      })),
-    [alerts, readIds],
-  )
+  const [markingAllRead, setMarkingAllRead] =
+    useState(false)
+
+  const [actionError, setActionError] =
+    useState<string | null>(null)
+
+  const notificationItems: NotificationItem[] =
+    useMemo(
+      () =>
+        notifications.map((notification) => {
+          const linkedAlert =
+            notification.alert_id === null
+              ? undefined
+              : alerts.find(
+                  (alert) =>
+                    alert.id === notification.alert_id,
+                )
+
+          const severityFromTitle =
+            /^\[([^\]]+)\]/.exec(
+              notification.title,
+            )?.[1]
+
+          return {
+            id: notification.id,
+            severity: toNotificationSeverity(
+              severityFromTitle ??
+                linkedAlert?.severity ??
+                'info',
+            ),
+            title: notification.title.replace(
+              /^\[[^\]]+\]\s*/,
+              '',
+            ),
+            message: notification.message,
+            source:
+              linkedAlert?.machine_name ??
+              (notification.alert_id !== null
+                ? `Alert #${notification.alert_id}`
+                : 'FactoryPulse'),
+            time: formatRelativeTime(
+              notification.created_at,
+            ),
+            read: notification.is_read,
+          }
+        }),
+      [alerts, notifications],
+    )
 
   const unreadCount = notifications.filter(
-    (notification) => !notification.read,
+    (notification) => !notification.is_read,
   ).length
 
   useEffect(() => {
     onUnreadCountChange(unreadCount)
   }, [onUnreadCountChange, unreadCount])
 
-  function markAllRead() {
-    setReadIds(
-      alerts.map((alert) => alert.id),
-    )
-  }
-
-  function markNotificationRead(
+  async function markNotificationRead(
     notificationId: number,
-  ) {
-    setReadIds((current) =>
+  ): Promise<boolean> {
+    const notification = notifications.find(
+      (item) => item.id === notificationId,
+    )
+
+    if (!notification) {
+      return false
+    }
+
+    if (notification.is_read) {
+      return true
+    }
+
+    if (
+      markingAllRead ||
+      updatingIds.includes(notificationId)
+    ) {
+      return false
+    }
+
+    setActionError(null)
+
+    setUpdatingIds((current) =>
       current.includes(notificationId)
         ? current
         : [...current, notificationId],
     )
+
+    try {
+      const updated = await updateNotification(
+        notificationId,
+        { is_read: true },
+      )
+
+      onNotificationUpdated(updated)
+
+      return true
+    } catch (requestError) {
+      setActionError(
+        requestError instanceof ApiError
+          ? requestError.message
+          : 'Unable to mark the notification as read.',
+      )
+
+      return false
+    } finally {
+      setUpdatingIds((current) =>
+        current.filter(
+          (id) => id !== notificationId,
+        ),
+      )
+    }
   }
 
-  function openNotification(
+  async function markAllRead() {
+    const unreadNotifications = notifications.filter(
+      (notification) => !notification.is_read,
+    )
+
+    if (
+      unreadNotifications.length === 0 ||
+      markingAllRead ||
+      updatingIds.length > 0
+    ) {
+      return
+    }
+
+    setActionError(null)
+    setMarkingAllRead(true)
+
+    try {
+      const results = await Promise.allSettled(
+        unreadNotifications.map((notification) =>
+          updateNotification(
+            notification.id,
+            { is_read: true },
+          ),
+        ),
+      )
+
+      const successfulUpdates = results.flatMap(
+        (result) =>
+          result.status === 'fulfilled'
+            ? [result.value]
+            : [],
+      )
+
+      successfulUpdates.forEach(
+        onNotificationUpdated,
+      )
+
+      const failureCount = results.filter(
+        (result) => result.status === 'rejected',
+      ).length
+
+      if (failureCount > 0) {
+        setActionError(
+          `${failureCount} notification(s) could not be marked as read. Please retry.`,
+        )
+      }
+    } catch {
+      setActionError(
+        'Unable to update notifications. Please retry.',
+      )
+    } finally {
+      setMarkingAllRead(false)
+    }
+  }
+
+  async function openNotification(
     notificationId: number,
   ) {
-    markNotificationRead(notificationId)
+    const notification = notifications.find(
+      (item) => item.id === notificationId,
+    )
 
-    navigate('/alerts')
+    const saved = await markNotificationRead(
+      notificationId,
+    )
+
+    if (!saved) {
+      return
+    }
+
+    if (notification?.alert_id != null) {
+      navigate(`/alerts?alertId=${notification.alert_id}`)
+    } else {
+      navigate('/alerts')
+    }
+
     onClose()
   }
 
@@ -230,13 +380,28 @@ export function NotificationCenter({
 
               <button
                 type="button"
-                onClick={markAllRead}
-                disabled={unreadCount === 0}
+                onClick={() => void markAllRead()}
+                disabled={
+                  unreadCount === 0 ||
+                  markingAllRead ||
+                  updatingIds.length > 0
+                }
               >
                 <CheckCheck size={14} />
-                Mark all read
+                {markingAllRead
+                  ? 'Marking...'
+                  : 'Mark all read'}
               </button>
             </div>
+
+            {actionError && (
+              <div
+                className="notification-action-error"
+                role="alert"
+              >
+                {actionError}
+              </div>
+            )}
 
             <div className="notification-list">
               {loading && (
@@ -254,96 +419,96 @@ export function NotificationCenter({
                 </div>
               )}
 
-              {!loading
-                && !error
-                && notifications.length === 0 && (
+              {!loading &&
+                !error &&
+                notificationItems.length === 0 && (
                   <div className="dashboard-panel-state">
-                    No open alerts.
+                    No notifications yet.
                   </div>
                 )}
 
-              {!loading
-                && !error
-                && notifications.map(
-                (notification, index) => {
-                  const Icon = getSeverityIcon(
-                    notification.severity,
-                  )
+              {!loading &&
+                !error &&
+                notificationItems.map(
+                  (notification, index) => {
+                    const Icon = getSeverityIcon(
+                      notification.severity,
+                    )
 
-                  return (
-                    <motion.button
-                      key={notification.id}
-                      type="button"
-                      className={`notification-item notification-${notification.severity} ${
-                        notification.read
-                          ? 'notification-item-read'
-                          : ''
-                      }`}
-                      onClick={() => {
-                        openNotification(
-                          notification.id,
-                        )
-                      }}
-                      initial={{
-                        opacity: 0,
-                        x: 12,
-                      }}
-                      animate={{
-                        opacity: 1,
-                        x: 0,
-                      }}
-                      transition={{
-                        delay:
-                          0.05
-                          + index * 0.055,
-                      }}
-                      whileHover={{
-                        x: -2,
-                      }}
-                      whileTap={{
-                        scale: 0.99,
-                      }}
-                    >
-                      <span className="notification-icon">
-                        <Icon size={16} />
-                      </span>
-
-                      <span className="notification-copy">
-                        <span className="notification-item-heading">
-                          <strong>
-                            {notification.title}
-                          </strong>
-
-                          {!notification.read && (
-                            <span className="notification-unread-dot" />
-                          )}
+                    return (
+                      <motion.button
+                        key={notification.id}
+                        type="button"
+                        className={`notification-item notification-${notification.severity} ${
+                          notification.read
+                            ? 'notification-item-read'
+                            : ''
+                        }`}
+                        disabled={
+                          markingAllRead ||
+                          updatingIds.includes(
+                            notification.id,
+                          )
+                        }
+                        onClick={() => {
+                          void openNotification(
+                            notification.id,
+                          )
+                        }}
+                        initial={{
+                          opacity: 0,
+                          x: 12,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          x: 0,
+                        }}
+                        transition={{
+                          delay: 0.05 + index * 0.055,
+                        }}
+                        whileHover={{ x: -2 }}
+                        whileTap={{ scale: 0.99 }}
+                      >
+                        <span className="notification-icon">
+                          <Icon size={16} />
                         </span>
 
-                        <span className="notification-message">
-                          {notification.message}
-                        </span>
+                        <span className="notification-copy">
+                          <span className="notification-item-heading">
+                            <strong>
+                              {notification.title}
+                            </strong>
 
-                        <span className="notification-meta">
-                          <span>
-                            {notification.source}
+                            {!notification.read && (
+                              <span className="notification-unread-dot" />
+                            )}
                           </span>
 
-                          <span className="notification-meta-divider" />
+                          <span className="notification-message">
+                            {notification.message}
+                          </span>
 
-                          <span>
-                            {notification.time}
+                          <span className="notification-meta">
+                            <span>
+                              {notification.source}
+                            </span>
+
+                            <span className="notification-meta-divider" />
+
+                            <span>
+                              {notification.time}
+                            </span>
                           </span>
                         </span>
-                      </span>
 
-                      <ArrowUpRight
-                        className="notification-open-icon"
-                        size={14}
-                      />
-                    </motion.button>
-                  )
-                },
-              )}
+                        <ArrowUpRight
+                          className="notification-open-icon"
+                          size={14}
+                        />
+                      </motion.button>
+                    )
+                  },
+                )}
             </div>
 
             <footer className="notification-footer">
@@ -352,7 +517,6 @@ export function NotificationCenter({
                 onClick={openAllAlerts}
               >
                 View all alerts
-
                 <ArrowUpRight size={14} />
               </button>
             </footer>
