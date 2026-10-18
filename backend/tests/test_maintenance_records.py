@@ -314,9 +314,14 @@ async def test_all_roles_can_read_machine_maintenance_records(
     assert data[0]["machine_id"] == machine_id
 
 
-async def test_operator_cannot_create_maintenance_record(
+@pytest.mark.parametrize(
+    "role_name",
+    ["manager", "operator"],
+)
+async def test_non_technical_roles_cannot_create_maintenance_record(
     client: AsyncClient,
     auth_headers: dict[str, dict[str, str]],
+    role_name: str,
 ) -> None:
     machine_id = await create_maintenance_test_machine(
         client,
@@ -325,7 +330,7 @@ async def test_operator_cannot_create_maintenance_record(
 
     response = await client.post(
         "/maintenance-records",
-        headers=auth_headers["operator"],
+        headers=auth_headers[role_name],
         json={
             "machine_id": machine_id,
             "maintenance_type": "corrective",
@@ -1581,3 +1586,58 @@ async def test_maintenance_analytics_api_returns_alert_response_metrics(
     ] == pytest.approx(
         3000
     )
+
+
+
+@pytest.mark.parametrize(
+    ("role_name", "expected_status"),
+    [
+        ("admin", 200),
+        ("manager", 403),
+        ("technician", 200),
+        ("operator", 403),
+    ],
+)
+async def test_maintenance_record_update_respects_role_permissions(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+    expected_status: int,
+) -> None:
+    machine_id = await create_maintenance_test_machine(
+        client,
+        auth_headers["admin"],
+    )
+
+    record = await create_valid_maintenance_record(
+        client,
+        auth_headers["admin"],
+        machine_id,
+    )
+
+    original_description = record["description"]
+    updated_description = f"Updated by {role_name}"
+
+    response = await client.patch(
+        f"/maintenance-records/{record['id']}",
+        headers=auth_headers[role_name],
+        json={
+            "description": updated_description,
+        },
+    )
+
+    assert response.status_code == expected_status
+
+    if expected_status == 200:
+        assert response.json()["description"] == updated_description
+    else:
+        persisted_response = await client.get(
+            f"/maintenance-records/{record['id']}",
+            headers=auth_headers["admin"],
+        )
+
+        assert persisted_response.status_code == 200
+        assert (
+            persisted_response.json()["description"]
+            == original_description
+        )

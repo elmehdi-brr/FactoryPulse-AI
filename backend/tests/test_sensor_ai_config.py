@@ -438,3 +438,55 @@ async def test_explicit_null_in_ai_config_patch_returns_422(
     )
 
     assert response.status_code == 422
+
+
+
+async def test_manager_can_create_sensor_ai_config(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+) -> None:
+    sensor_id = await create_test_sensor(client, auth_headers["admin"])
+
+    response = await client.post(
+        f"/sensors/{sensor_id}/ai-config",
+        headers=auth_headers["manager"],
+        json={
+            "is_enabled": True,
+            "engine_name": "statistical-zscore",
+            "anomaly_threshold": 3.0,
+            "min_history": 10,
+            "history_limit": 50,
+            "high_risk_threshold": 5.0,
+            "critical_risk_threshold": 8.0,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["sensor_id"] == sensor_id
+
+
+
+@pytest.mark.parametrize("role_name", ["technician", "operator"])
+async def test_non_management_roles_cannot_patch_ai_config(
+    client: AsyncClient,
+    auth_headers: dict[str, dict[str, str]],
+    role_name: str,
+) -> None:
+    sensor_id = await create_test_sensor(client, auth_headers["admin"])
+    await create_default_ai_config(client, auth_headers["admin"], sensor_id)
+
+    response = await client.patch(
+        f"/sensors/{sensor_id}/ai-config",
+        headers=auth_headers[role_name],
+        json={"anomaly_threshold": 4.0},
+    )
+
+    assert response.status_code == 403
+
+    persisted_response = await client.get(
+        f"/sensors/{sensor_id}/ai-config",
+        headers=auth_headers["operator"],
+    )
+
+    assert persisted_response.status_code == 200
+    assert persisted_response.json()["anomaly_threshold"] == 3.0
